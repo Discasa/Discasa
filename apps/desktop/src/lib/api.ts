@@ -1,10 +1,11 @@
 import type {
+  AlbumRecord,
   AppSession,
-  CollectionRecord,
-  CreateCollectionInput,
+  CreateAlbumInput,
   DiscasaInitializationResponse,
   GuildSummary,
   LibraryItem,
+  RenameAlbumInput,
   UploadResponse,
 } from "@discasa/shared";
 
@@ -56,38 +57,47 @@ export async function initializeDiscasa(guildId: string): Promise<DiscasaInitial
   });
 }
 
-export async function getCollections(): Promise<CollectionRecord[]> {
-  return requestJson<CollectionRecord[]>("/api/collections");
+export async function getAlbums(): Promise<AlbumRecord[]> {
+  return requestJson<AlbumRecord[]>("/api/albums");
 }
 
-export async function createCollection(input: CreateCollectionInput): Promise<{ id: string }> {
-  return requestJson<{ id: string }>("/api/collections", {
+export async function createAlbum(input: CreateAlbumInput): Promise<{ id: string }> {
+  return requestJson<{ id: string }>("/api/albums", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
-export async function reorderCollectionOrder(orderedIds: string[]): Promise<{ collections: CollectionRecord[] }> {
-  return requestJson<{ collections: CollectionRecord[] }>("/api/collections/reorder", {
+export async function renameAlbum(albumId: string, input: RenameAlbumInput): Promise<{ id: string; name: string }> {
+  return requestJson<{ id: string; name: string }>(`/api/albums/${encodeURIComponent(albumId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function reorderAlbums(orderedIds: string[]): Promise<{ albums: AlbumRecord[] }> {
+  return requestJson<{ albums: AlbumRecord[] }>("/api/albums/reorder", {
     method: "PUT",
     body: JSON.stringify({ orderedIds }),
   });
 }
 
-export async function deleteCollection(collectionId: string): Promise<{ deleted: true }> {
-  return requestJson<{ deleted: true }>(`/api/collections/${encodeURIComponent(collectionId)}`, {
+export async function deleteAlbum(albumId: string): Promise<{ deleted: true }> {
+  return requestJson<{ deleted: true }>(`/api/albums/${encodeURIComponent(albumId)}`, {
     method: "DELETE",
   });
 }
 
-export async function getLibraryItems(collectionId?: string): Promise<LibraryItem[]> {
-  const query = collectionId && collectionId !== "all" ? `?collectionId=${encodeURIComponent(collectionId)}` : "";
-  return requestJson<LibraryItem[]>(`/api/library${query}`);
+export async function getLibraryItems(): Promise<LibraryItem[]> {
+  return requestJson<LibraryItem[]>("/api/library");
 }
 
-export async function uploadFiles(files: File[], collectionId: string): Promise<UploadResponse> {
+export async function uploadFiles(files: File[], albumId?: string): Promise<UploadResponse> {
   const body = new FormData();
-  body.append("collectionId", collectionId);
+
+  if (albumId) {
+    body.append("albumId", albumId);
+  }
 
   for (const file of files) {
     body.append("files", file);
@@ -96,6 +106,30 @@ export async function uploadFiles(files: File[], collectionId: string): Promise<
   return requestJson<UploadResponse>("/api/upload", {
     method: "POST",
     body,
+  });
+}
+
+export async function toggleFavorite(itemId: string): Promise<{ item: LibraryItem }> {
+  return requestJson<{ item: LibraryItem }>(`/api/library/${encodeURIComponent(itemId)}/favorite`, {
+    method: "PATCH",
+  });
+}
+
+export async function moveToTrash(itemId: string): Promise<{ item: LibraryItem }> {
+  return requestJson<{ item: LibraryItem }>(`/api/library/${encodeURIComponent(itemId)}/trash`, {
+    method: "PATCH",
+  });
+}
+
+export async function restoreFromTrash(itemId: string): Promise<{ item: LibraryItem }> {
+  return requestJson<{ item: LibraryItem }>(`/api/library/${encodeURIComponent(itemId)}/restore`, {
+    method: "PATCH",
+  });
+}
+
+export async function deleteLibraryItem(itemId: string): Promise<{ deleted: true }> {
+  return requestJson<{ deleted: true }>(`/api/library/${encodeURIComponent(itemId)}`, {
+    method: "DELETE",
   });
 }
 

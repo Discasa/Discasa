@@ -1,6 +1,18 @@
 import { Router } from "express";
 import multer from "multer";
-import { addCollection, addMockFiles, deleteCollection, getCollections, getLibraryItems, reorderCollections } from "../lib/store";
+import {
+  addAlbum,
+  addMockFiles,
+  deleteAlbum,
+  deleteLibraryItem,
+  getAlbums,
+  getLibraryItems,
+  renameAlbum,
+  restoreLibraryItem,
+  reorderAlbums,
+  toggleFavoriteState,
+  trashLibraryItem,
+} from "../lib/store";
 import { initializeDiscasaInGuild, listEligibleGuilds } from "../services/discordService";
 
 const router = Router();
@@ -45,23 +57,42 @@ router.post("/discasa/initialize", async (request, response, next) => {
   }
 });
 
-router.get("/collections", (_request, response) => {
-  response.json(getCollections());
+router.get("/albums", (_request, response) => {
+  response.json(getAlbums());
 });
 
-router.post("/collections", (request, response) => {
+router.post("/albums", (request, response) => {
   const name = String(request.body.name ?? "").trim();
 
   if (!name) {
-    response.status(400).json({ error: "Collection name is required" });
+    response.status(400).json({ error: "Album name is required" });
     return;
   }
 
-  const created = addCollection(name);
+  const created = addAlbum(name);
   response.status(201).json({ id: created.id });
 });
 
-router.put("/collections/reorder", (request, response) => {
+router.patch("/albums/:albumId", (request, response) => {
+  const albumId = String(request.params.albumId ?? "");
+  const name = String(request.body.name ?? "").trim();
+
+  if (!albumId || !name) {
+    response.status(400).json({ error: "albumId and name are required" });
+    return;
+  }
+
+  const updated = renameAlbum(albumId, name);
+
+  if (!updated) {
+    response.status(404).json({ error: "Album not found" });
+    return;
+  }
+
+  response.json(updated);
+});
+
+router.put("/albums/reorder", (request, response) => {
   const orderedIds = Array.isArray(request.body.orderedIds)
     ? request.body.orderedIds.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
     : [];
@@ -71,43 +102,89 @@ router.put("/collections/reorder", (request, response) => {
     return;
   }
 
-  response.json({ collections: reorderCollections(orderedIds) });
+  response.json({ albums: reorderAlbums(orderedIds) });
 });
 
-router.delete("/collections/:collectionId", (request, response) => {
-  const collectionId = String(request.params.collectionId ?? "");
+router.delete("/albums/:albumId", (request, response) => {
+  const albumId = String(request.params.albumId ?? "");
 
-  if (!collectionId) {
-    response.status(400).json({ error: "collectionId is required" });
+  if (!albumId) {
+    response.status(400).json({ error: "albumId is required" });
     return;
   }
 
-  const deleted = deleteCollection(collectionId);
+  const deleted = deleteAlbum(albumId);
 
   if (!deleted) {
-    response.status(404).json({ error: "Collection not found" });
+    response.status(404).json({ error: "Album not found" });
     return;
   }
 
   response.json({ deleted: true });
 });
 
-router.get("/library", (request, response) => {
-  const collectionId = typeof request.query.collectionId === "string" ? request.query.collectionId : undefined;
-  response.json(getLibraryItems(collectionId));
+router.get("/library", (_request, response) => {
+  response.json(getLibraryItems());
 });
 
 router.post("/upload", upload.array("files"), (request, response) => {
   const files = request.files as Express.Multer.File[] | undefined;
-  const collectionId = String(request.body.collectionId ?? "all");
+  const albumId = typeof request.body.albumId === "string" && request.body.albumId.length > 0 ? request.body.albumId : undefined;
 
   if (!files?.length) {
     response.status(400).json({ error: "At least one file is required" });
     return;
   }
 
-  const uploaded = addMockFiles(files, collectionId);
+  const uploaded = addMockFiles(files, albumId);
   response.status(201).json({ uploaded });
 });
 
+router.patch("/library/:itemId/favorite", (request, response) => {
+  const itemId = String(request.params.itemId ?? "");
+  const item = toggleFavoriteState(itemId);
+
+  if (!item) {
+    response.status(404).json({ error: "Library item not found" });
+    return;
+  }
+
+  response.json({ item });
+});
+
+router.patch("/library/:itemId/trash", (request, response) => {
+  const itemId = String(request.params.itemId ?? "");
+  const item = trashLibraryItem(itemId);
+
+  if (!item) {
+    response.status(404).json({ error: "Library item not found" });
+    return;
+  }
+
+  response.json({ item });
+});
+
+router.patch("/library/:itemId/restore", (request, response) => {
+  const itemId = String(request.params.itemId ?? "");
+  const item = restoreLibraryItem(itemId);
+
+  if (!item) {
+    response.status(404).json({ error: "Library item not found" });
+    return;
+  }
+
+  response.json({ item });
+});
+
+router.delete("/library/:itemId", (request, response) => {
+  const itemId = String(request.params.itemId ?? "");
+  const deleted = deleteLibraryItem(itemId);
+
+  if (!deleted) {
+    response.status(404).json({ error: "Library item not found" });
+    return;
+  }
+
+  response.json({ deleted: true });
+});
 export { router as apiRouter };

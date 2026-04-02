@@ -22,13 +22,17 @@ export type DiscasaInitializationResponse = {
   channels: readonly string[] | string[];
 };
 
-export type CollectionRecord = {
+export type AlbumRecord = {
   id: string;
   name: string;
   itemCount: number;
 };
 
-export type CreateCollectionInput = {
+export type CreateAlbumInput = {
+  name: string;
+};
+
+export type RenameAlbumInput = {
   name: string;
 };
 
@@ -39,16 +43,13 @@ export type LibraryItem = {
   mimeType: string;
   status: string;
   guildId: string;
-  collectionIds: string[];
+  albumIds: string[];
   uploadedAt: string;
   attachmentUrl: string;
+  isFavorite: boolean;
+  isTrashed: boolean;
 };
 
 export type UploadResponse = {
   uploaded: LibraryItem[];
 };
-
-export const DEFAULT_COLLECTIONS: CollectionRecord[] = [
-  { id: "album-test-1", name: "Album Test 1", itemCount: 0 },
-  { id: "album-test-pictures", name: "Album test pictures", itemCount: 0 },
-];

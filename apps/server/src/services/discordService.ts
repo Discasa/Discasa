@@ -1,8 +1,6 @@
-import type { GuildSummary } from "@discasa/shared";
-import { DISCASA_CATEGORY_NAME, DISCASA_CHANNELS } from "@discasa/shared";
-import { Client, GatewayIntentBits, ChannelType, PermissionsBitField } from "discord.js";
+import { DISCASA_CATEGORY_NAME, DISCASA_CHANNELS, type GuildSummary } from "@discasa/shared";
+import { ChannelType, Client, GatewayIntentBits, PermissionsBitField } from "discord.js";
 import { env } from "../lib/env";
-import { getMockGuilds, initializeMockDiscasa } from "../lib/store";
 
 let botClient: Client | null = null;
 
@@ -21,15 +19,44 @@ async function getBotClient(): Promise<Client | null> {
 
 export async function listEligibleGuilds(): Promise<GuildSummary[]> {
   if (env.mockMode) {
-    return getMockGuilds();
+    return [
+      {
+        id: "guild_1",
+        name: "Discasa Server",
+        owner: true,
+        permissions: ["ADMINISTRATOR"],
+      },
+      {
+        id: "guild_2",
+        name: "Archive Lab",
+        owner: false,
+        permissions: ["MANAGE_GUILD", "MANAGE_CHANNELS"],
+      },
+    ];
   }
 
-  return [];
+  const client = await getBotClient();
+  if (!client) {
+    return [];
+  }
+
+  const guilds = await client.guilds.fetch();
+
+  return guilds.map((guild) => ({
+    id: guild.id,
+    name: guild.name,
+    owner: false,
+    permissions: [],
+  }));
 }
 
 export async function initializeDiscasaInGuild(guildId: string) {
   if (env.mockMode) {
-    return initializeMockDiscasa(guildId);
+    return {
+      guildId,
+      categoryName: DISCASA_CATEGORY_NAME,
+      channels: DISCASA_CHANNELS,
+    };
   }
 
   const client = await getBotClient();

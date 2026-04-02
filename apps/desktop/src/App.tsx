@@ -1,30 +1,52 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import type { CollectionRecord, LibraryItem } from "@discasa/shared";
-import { createCollection, deleteCollection, getCollections, getLibraryItems, getSession, openDiscordLogin, reorderCollectionOrder, uploadFiles } from "./lib/api";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { AlbumRecord, LibraryItem } from "@discasa/shared";
+import {
+  createAlbum,
+  deleteAlbum,
+  deleteLibraryItem,
+  getAlbums,
+  getLibraryItems,
+  getSession,
+  moveToTrash,
+  openDiscordLogin,
+  renameAlbum,
+  reorderAlbums,
+  restoreFromTrash,
+  toggleFavorite,
+  uploadFiles,
+} from "./lib/api";
 import logoUrl from "./assets/discasa-logo.png";
 
-type Page = "library" | "settings";
+type SettingsSection = "discord" | "appearance" | "window";
 type WindowState = "default" | "maximized";
 
-type SidebarEntry = {
-  id: string;
-  name: string;
-  itemCount: number;
-  isSystem: boolean;
-};
+type FixedLibraryViewId = "all-files" | "favorites" | "trash";
+type FixedCollectionViewId = "pictures" | "videos" | "others";
 
-type ContextMenuState = {
+type SidebarView =
+  | { kind: "library"; id: FixedLibraryViewId }
+  | { kind: "collection"; id: FixedCollectionViewId }
+  | { kind: "album"; id: string };
+
+type AlbumContextMenuState = {
   x: number;
   y: number;
-  collectionId: string;
-  collectionName: string;
+  albumId: string;
+  albumName: string;
 } | null;
 
 const appWindow = getCurrentWindow();
 const SIDEBAR_COLLAPSED_KEY = "discasa.sidebar.collapsed";
 const MINIMIZE_TO_TRAY_KEY = "discasa.window.minimizeToTray";
 const CLOSE_TO_TRAY_KEY = "discasa.window.closeToTray";
+const ACCENT_COLOR_KEY = "discasa.ui.accentColor";
+const DEFAULT_ACCENT_HEX = "#E9881D";
+
+const DEFAULT_PROFILE = {
+  nickname: "discord-nick",
+  server: "discord-server",
+};
 
 function readStoredBoolean(key: string, fallback: boolean): boolean {
   if (typeof window === "undefined") return fallback;
@@ -33,26 +55,135 @@ function readStoredBoolean(key: string, fallback: boolean): boolean {
   return raw === "1";
 }
 
-function moveCollection(list: CollectionRecord[], draggedId: string, targetId: string): CollectionRecord[] {
-  if (draggedId === targetId) return list;
+function readStoredString(key: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  const raw = window.localStorage.getItem(key);
+  return raw && raw.trim().length > 0 ? raw : fallback;
+}
 
-  const fromIndex = list.findIndex((collection) => collection.id === draggedId);
-  const toIndex = list.findIndex((collection) => collection.id === targetId);
+function normalizeHexColor(value: string): string | null {
+  const raw = value.trim().replace(/^#/, "");
 
-  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
-    return list;
+  if (/^[0-9a-fA-F]{3}$/.test(raw)) {
+    const expanded = raw
+      .split("")
+      .map((character) => `${character}${character}`)
+      .join("");
+    return `#${expanded.toUpperCase()}`;
   }
 
-  const next = [...list];
-  const [moved] = next.splice(fromIndex, 1);
-  next.splice(toIndex, 0, moved);
-  return next;
+  if (/^[0-9a-fA-F]{6}$/.test(raw)) {
+    return `#${raw.toUpperCase()}`;
+  }
+
+  return null;
+}
+
+function hexToRgbChannels(hex: string): string {
+  const normalized = normalizeHexColor(hex) ?? DEFAULT_ACCENT_HEX;
+  const value = normalized.slice(1);
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `${red}, ${green}, ${blue}`;
+}
+
+function tintHexColor(hex: string, amount: number): string {
+  const normalized = normalizeHexColor(hex) ?? DEFAULT_ACCENT_HEX;
+  const value = normalized.slice(1);
+  const channels = [0, 2, 4].map((start) => Number.parseInt(value.slice(start, start + 2), 16));
+  const tinted = channels.map((channel) => {
+    const mixed = Math.round(channel + (255 - channel) * amount);
+    return Math.max(0, Math.min(255, mixed)).toString(16).padStart(2, "0");
+  });
+  return `#${tinted.join("").toUpperCase()}`;
+}
+
+function isImage(item: LibraryItem): boolean {
+  return item.mimeType.startsWith("image/");
+}
+
+function isVideo(item: LibraryItem): boolean {
+  return item.mimeType.startsWith("video/");
+}
+
+function isOther(item: LibraryItem): boolean {
+  return !isImage(item) && !isVideo(item);
+}
+
+function LibraryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4.75 7.25A1.75 1.75 0 0 1 6.5 5.5h5.2c.41 0 .8.16 1.09.45l1.16 1.15c.17.17.39.27.63.27h2.92a1.75 1.75 0 0 1 1.75 1.75v6.38a1.75 1.75 0 0 1-1.75 1.75h-11A1.75 1.75 0 0 1 4.75 15.5v-8.25Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M8 11.5h8.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M8 14.5h5.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function HeartIcon({ filled = false }: { filled?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 20.55 10.55 19.22C5.4 14.54 2 11.46 2 7.7 2 4.76 4.3 2.5 7.2 2.5c1.64 0 3.22.76 4.25 1.96 1.03-1.2 2.61-1.96 4.25-1.96 2.9 0 5.2 2.26 5.2 5.2 0 3.76-3.4 6.84-8.55 11.52L12 20.55Z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5.5 7.25h13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M9 7.25V5.8c0-.72.58-1.3 1.3-1.3h3.4c.72 0 1.3.58 1.3 1.3v1.45" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M7.6 7.25v10.05c0 .66.54 1.2 1.2 1.2h6.4c.66 0 1.2-.54 1.2-1.2V7.25" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M10 10.25v4.5M14 10.25v4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PictureIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="4.75" y="6.25" width="14.5" height="11.5" rx="1.75" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="m7.8 14.75 2.28-2.6c.25-.29.7-.31.99-.05l1.58 1.42 1.49-1.78c.28-.33.8-.36 1.12-.07l2 1.82" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="9" cy="9.8" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function VideoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="4.75" y="6.25" width="10.5" height="11.5" rx="1.75" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="m15.25 10.15 3.7-2.1v7.9l-3.7-2.1" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 function FolderIcon({ filled = false }: { filled?: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={`folder-icon ${filled ? "filled" : ""}`}>
-      <path d="M3.75 6.75A2.25 2.25 0 0 1 6 4.5h3.07c.6 0 1.16.24 1.58.66l1.02 1.02c.14.14.34.22.54.22H18A2.25 2.25 0 0 1 20.25 8.7v8.55A2.25 2.25 0 0 1 18 19.5H6a2.25 2.25 0 0 1-2.25-2.25V6.75Z" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M4.75 7.25A1.75 1.75 0 0 1 6.5 5.5h4.1c.44 0 .85.18 1.16.48l1.06 1.03c.18.18.43.29.69.29h4a1.75 1.75 0 0 1 1.75 1.75v6.45a1.75 1.75 0 0 1-1.75 1.75h-11A1.75 1.75 0 0 1 4.75 15.5v-8.25Z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 5.5v13M5.5 12h13" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }
@@ -73,14 +204,6 @@ function ChevronRightDoubleIcon() {
   );
 }
 
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 5.5v13M5.5 12h13" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -89,36 +212,52 @@ function SettingsIcon() {
   );
 }
 
+function UploadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 15.75V6.25" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="m8.5 9.75 3.5-3.5 3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5.75 16.25v1a1.5 1.5 0 0 0 1.5 1.5h9.5a1.5 1.5 0 0 0 1.5-1.5v-1" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function App() {
-  const [page, setPage] = useState<Page>("library");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [collections, setCollections] = useState<CollectionRecord[]>([]);
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string>("all");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCreateAlbumOpen, setIsCreateAlbumOpen] = useState(false);
+  const [newAlbumName, setNewAlbumName] = useState("");
+  const [isCreatingAlbum, setIsCreatingAlbum] = useState(false);
+  const [createAlbumError, setCreateAlbumError] = useState("");
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("discord");
+  const [sessionName, setSessionName] = useState<string | null>(null);
+  const [albums, setAlbums] = useState<AlbumRecord[]>([]);
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [selectedView, setSelectedView] = useState<SidebarView>({ kind: "library", id: "all-files" });
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [isBusy, setIsBusy] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [windowState, setWindowState] = useState<WindowState>("default");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => readStoredBoolean(SIDEBAR_COLLAPSED_KEY, false));
-  const [draggedCollectionId, setDraggedCollectionId] = useState<string | null>(null);
-  const [dragOverCollectionId, setDragOverCollectionId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const [albumContextMenu, setAlbumContextMenu] = useState<AlbumContextMenuState>(null);
   const [minimizeToTray, setMinimizeToTray] = useState<boolean>(() => readStoredBoolean(MINIMIZE_TO_TRAY_KEY, false));
   const [closeToTray, setCloseToTray] = useState<boolean>(() => readStoredBoolean(CLOSE_TO_TRAY_KEY, false));
+  const [accentColor, setAccentColor] = useState<string>(() => readStoredString(ACCENT_COLOR_KEY, DEFAULT_ACCENT_HEX));
+  const [accentInput, setAccentInput] = useState<string>(() => readStoredString(ACCENT_COLOR_KEY, DEFAULT_ACCENT_HEX));
+  const [accentInputError, setAccentInputError] = useState("");
 
   const dragDepthRef = useRef(0);
-  const collectionsRef = useRef<CollectionRecord[]>([]);
-  const reorderDirtyRef = useRef(false);
   const closeToTrayRef = useRef(closeToTray);
+  const createAlbumInputRef = useRef<HTMLInputElement | null>(null);
+  const albumsRef = useRef<AlbumRecord[]>([]);
 
   useEffect(() => {
     void bootstrap();
   }, []);
 
   useEffect(() => {
-    collectionsRef.current = collections;
-  }, [collections]);
+    albumsRef.current = albums;
+  }, [albums]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -137,6 +276,19 @@ export function App() {
   }, [closeToTray]);
 
   useEffect(() => {
+    const normalized = normalizeHexColor(accentColor) ?? DEFAULT_ACCENT_HEX;
+    const root = document.documentElement;
+
+    root.style.setProperty("--accent-color", normalized);
+    root.style.setProperty("--accent-rgb", hexToRgbChannels(normalized));
+    root.style.setProperty("--accent-color-hover", tintHexColor(normalized, 0.12));
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ACCENT_COLOR_KEY, normalized);
+    }
+  }, [accentColor]);
+
+  useEffect(() => {
     if (!message && !error) return;
 
     const timer = window.setTimeout(() => {
@@ -148,12 +300,12 @@ export function App() {
   }, [message, error]);
 
   useEffect(() => {
-    if (!contextMenu) return;
+    if (!albumContextMenu) return;
 
-    const handlePointerDown = () => setContextMenu(null);
+    const handlePointerDown = () => setAlbumContextMenu(null);
     const handleEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
-        setContextMenu(null);
+        setAlbumContextMenu(null);
       }
     };
 
@@ -164,26 +316,60 @@ export function App() {
       window.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [contextMenu]);
+  }, [albumContextMenu]);
+
+  useEffect(() => {
+    if (!isCreateAlbumOpen) return;
+
+    const timer = window.setTimeout(() => {
+      createAlbumInputRef.current?.focus();
+      createAlbumInputRef.current?.select();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [isCreateAlbumOpen]);
+
+  useEffect(() => {
+    if (!isSettingsOpen && !isCreateAlbumOpen) return;
+
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (isCreateAlbumOpen) {
+        closeCreateAlbumModal();
+        return;
+      }
+      if (isSettingsOpen) {
+        setIsSettingsOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isSettingsOpen, isCreateAlbumOpen]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
 
-    void appWindow.onCloseRequested(async (event) => {
-      if (!closeToTrayRef.current) return;
+    void appWindow
+      .onCloseRequested(async (event) => {
+        if (!closeToTrayRef.current) return;
 
-      event.preventDefault();
+        event.preventDefault();
 
-      try {
-        await appWindow.hide();
-        setMessage("Discasa enviado para a bandeja.");
-        setError("");
-      } catch {
-        setError("Não foi possível enviar o app para a bandeja.");
-      }
-    }).then((fn) => {
-      unlisten = fn;
-    });
+        try {
+          await appWindow.hide();
+          setMessage("Discasa enviado para a bandeja.");
+          setError("");
+        } catch {
+          setError("Não foi possível enviar o app para a bandeja.");
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
 
     return () => {
       if (unlisten) {
@@ -197,14 +383,14 @@ export function App() {
     setError("");
 
     try {
-      const [session, nextCollections, nextItems] = await Promise.all([
+      const [session, nextAlbums, nextItems] = await Promise.all([
         getSession(),
-        getCollections(),
+        getAlbums(),
         getLibraryItems(),
       ]);
 
-      setIsAuthenticated(session.authenticated);
-      setCollections(nextCollections);
+      setSessionName(session.user?.username ?? null);
+      setAlbums(nextAlbums);
       setItems(nextItems);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Failed to load Discasa preview.");
@@ -213,56 +399,181 @@ export function App() {
     }
   }
 
-  const sidebarEntries = useMemo<SidebarEntry[]>(() => {
-    return [
-      { id: "all", name: "All Files", itemCount: items.length, isSystem: true },
-      ...collections.map((collection) => ({
-        id: collection.id,
-        name: collection.name,
-        itemCount: countForCollection(collection.id),
-        isSystem: false,
-      })),
-    ];
-  }, [collections, items]);
+  const profile = useMemo(
+    () => ({
+      nickname: sessionName ?? DEFAULT_PROFILE.nickname,
+      server: DEFAULT_PROFILE.server,
+    }),
+    [sessionName],
+  );
 
   const visibleItems = useMemo(() => {
-    if (selectedCollectionId === "all") return items;
-    return items.filter((item) => item.collectionIds.includes(selectedCollectionId));
-  }, [items, selectedCollectionId]);
+    switch (selectedView.kind) {
+      case "library":
+        if (selectedView.id === "all-files") {
+          return items.filter((item) => !item.isTrashed);
+        }
 
-  function countForCollection(collectionId: string): number {
-    if (collectionId === "all") return items.length;
-    return items.filter((item) => item.collectionIds.includes(collectionId)).length;
+        if (selectedView.id === "favorites") {
+          return items.filter((item) => item.isFavorite && !item.isTrashed);
+        }
+
+        return items.filter((item) => item.isTrashed);
+      case "collection":
+        if (selectedView.id === "pictures") {
+          return items.filter((item) => !item.isTrashed && isImage(item));
+        }
+
+        if (selectedView.id === "videos") {
+          return items.filter((item) => !item.isTrashed && isVideo(item));
+        }
+
+        return items.filter((item) => !item.isTrashed && isOther(item));
+      case "album":
+        return items.filter((item) => !item.isTrashed && item.albumIds.includes(selectedView.id));
+      default:
+        return [];
+    }
+  }, [items, selectedView]);
+
+  const currentTitle = useMemo(() => {
+    switch (selectedView.kind) {
+      case "library":
+        if (selectedView.id === "all-files") return "All Files";
+        if (selectedView.id === "favorites") return "Favorites";
+        return "Trash";
+      case "collection":
+        if (selectedView.id === "pictures") return "Pictures";
+        if (selectedView.id === "videos") return "Videos";
+        return "Others";
+      case "album":
+        return albums.find((album) => album.id === selectedView.id)?.name ?? "Album";
+      default:
+        return "Library";
+    }
+  }, [albums, selectedView]);
+
+  const currentDescription = useMemo(() => {
+    switch (selectedView.kind) {
+      case "library":
+        if (selectedView.id === "all-files") return "Todos os arquivos ativos da biblioteca.";
+        if (selectedView.id === "favorites") return "Arquivos marcados como favoritos.";
+        return "Itens enviados para a lixeira.";
+      case "collection":
+        if (selectedView.id === "pictures") return "Somente arquivos de imagem.";
+        if (selectedView.id === "videos") return "Somente arquivos de vídeo.";
+        return "Arquivos que não são imagem nem vídeo.";
+      case "album":
+        return "Arquivos vinculados a este álbum.";
+      default:
+        return "";
+    }
+  }, [selectedView]);
+
+  function updateItemInState(nextItem: LibraryItem): void {
+    setItems((current) => current.map((item) => (item.id === nextItem.id ? nextItem : item)));
   }
 
-  function getCollectionIndex(collectionId: string): number {
-    return collectionsRef.current.findIndex((collection) => collection.id === collectionId);
+  function removeItemFromState(itemId: string): void {
+    setItems((current) => current.filter((item) => item.id !== itemId));
   }
 
-  function canMoveCollection(collectionId: string, direction: "up" | "down"): boolean {
-    const index = getCollectionIndex(collectionId);
+  function getAlbumIndex(albumId: string): number {
+    return albumsRef.current.findIndex((album) => album.id === albumId);
+  }
+
+  function canMoveAlbum(albumId: string, direction: "up" | "down"): boolean {
+    const index = getAlbumIndex(albumId);
     if (index === -1) return false;
     if (direction === "up") return index > 0;
-    return index < collectionsRef.current.length - 1;
+    return index < albumsRef.current.length - 1;
   }
 
-  async function handleMoveCollection(collectionId: string, direction: "up" | "down"): Promise<void> {
-    const currentIndex = getCollectionIndex(collectionId);
+  function openLibraryView(nextView: SidebarView): void {
+    setSelectedView(nextView);
+    setAlbumContextMenu(null);
+  }
+
+  function openCreateAlbumModal(): void {
+    setAlbumContextMenu(null);
+    setCreateAlbumError("");
+    setNewAlbumName("");
+    setIsCreateAlbumOpen(true);
+  }
+
+  function closeCreateAlbumModal(): void {
+    if (isCreatingAlbum) return;
+    setIsCreateAlbumOpen(false);
+    setCreateAlbumError("");
+    setNewAlbumName("");
+  }
+
+  async function handleCreateAlbumSubmit(event?: FormEvent<HTMLFormElement>): Promise<void> {
+    event?.preventDefault();
+
+    const trimmed = newAlbumName.trim();
+    if (!trimmed) {
+      setCreateAlbumError("Digite um nome para o álbum.");
+      return;
+    }
+
+    setIsCreatingAlbum(true);
+    setCreateAlbumError("");
+
+    try {
+      const result = await createAlbum({ name: trimmed });
+      const nextAlbums = [...albumsRef.current, { id: result.id, name: trimmed, itemCount: 0 }];
+      albumsRef.current = nextAlbums;
+      setAlbums(nextAlbums);
+      setSelectedView({ kind: "album", id: result.id });
+      setMessage(`Álbum criado: ${trimmed}`);
+      setError("");
+      setIsCreateAlbumOpen(false);
+      setNewAlbumName("");
+    } catch (caughtError) {
+      setCreateAlbumError(caughtError instanceof Error ? caughtError.message : "Não foi possível criar o álbum.");
+    } finally {
+      setIsCreatingAlbum(false);
+    }
+  }
+
+  async function handleRenameAlbum(albumId: string, currentName: string): Promise<void> {
+    const nextName = window.prompt("Novo nome do álbum:", currentName);
+    if (!nextName || !nextName.trim()) return;
+
+    try {
+      const trimmed = nextName.trim();
+      await renameAlbum(albumId, { name: trimmed });
+      const nextAlbums = albumsRef.current.map((album) =>
+        album.id === albumId ? { ...album, name: trimmed } : album,
+      );
+      albumsRef.current = nextAlbums;
+      setAlbums(nextAlbums);
+      setAlbumContextMenu(null);
+      setMessage(`Álbum renomeado para: ${trimmed}`);
+      setError("");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível renomear o álbum.");
+    }
+  }
+
+  async function handleMoveAlbum(albumId: string, direction: "up" | "down"): Promise<void> {
+    const currentIndex = getAlbumIndex(albumId);
     if (currentIndex === -1) return;
 
     const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= collectionsRef.current.length) return;
+    if (targetIndex < 0 || targetIndex >= albumsRef.current.length) return;
 
-    const nextCollections = [...collectionsRef.current];
-    const [moved] = nextCollections.splice(currentIndex, 1);
-    nextCollections.splice(targetIndex, 0, moved);
+    const nextAlbums = [...albumsRef.current];
+    const [moved] = nextAlbums.splice(currentIndex, 1);
+    nextAlbums.splice(targetIndex, 0, moved);
 
     try {
-      const orderedIds = nextCollections.map((collection) => collection.id);
-      const response = await reorderCollectionOrder(orderedIds);
-      collectionsRef.current = response.collections;
-      setCollections(response.collections);
-      setContextMenu(null);
+      const orderedIds = nextAlbums.map((album) => album.id);
+      const response = await reorderAlbums(orderedIds);
+      albumsRef.current = response.albums;
+      setAlbums(response.albums);
+      setAlbumContextMenu(null);
       setMessage(`Álbum movido para ${direction === "up" ? "cima" : "baixo"}.`);
       setError("");
     } catch (caughtError) {
@@ -270,51 +581,28 @@ export function App() {
     }
   }
 
-  function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    const kb = bytes / 1024;
-    if (kb < 1024) return `${kb.toFixed(1)} KB`;
-    const mb = kb / 1024;
-    if (mb < 1024) return `${mb.toFixed(1)} MB`;
-    return `${(mb / 1024).toFixed(1)} GB`;
-  }
-
-  async function handleCreateCollection(): Promise<void> {
-    const name = window.prompt("Nome do novo álbum:");
-    if (!name || !name.trim()) return;
-
-    try {
-      const trimmed = name.trim();
-      const result = await createCollection({ name: trimmed });
-      const nextCollection: CollectionRecord = { id: result.id, name: trimmed, itemCount: 0 };
-      const nextCollections = [...collectionsRef.current, nextCollection];
-      collectionsRef.current = nextCollections;
-      setCollections(nextCollections);
-      setSelectedCollectionId(nextCollection.id);
-      setPage("library");
-      setMessage(`Álbum criado: ${trimmed}`);
-      setError("");
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível criar o álbum.");
-    }
-  }
-
-  async function handleDeleteCollection(collectionId: string, collectionName: string): Promise<void> {
-    const confirmed = window.confirm(`Excluir o álbum \"${collectionName}\"?`);
+  async function handleDeleteAlbum(albumId: string, albumName: string): Promise<void> {
+    const confirmed = window.confirm(`Excluir o álbum "${albumName}"?`);
     if (!confirmed) return;
 
     try {
-      await deleteCollection(collectionId);
-      const nextCollections = collectionsRef.current.filter((collection) => collection.id !== collectionId);
-      collectionsRef.current = nextCollections;
-      setCollections(nextCollections);
-      setItems((current) => current.map((item) => ({
-        ...item,
-        collectionIds: item.collectionIds.filter((id) => id !== collectionId),
-      })));
-      setSelectedCollectionId((current) => (current === collectionId ? "all" : current));
-      setContextMenu(null);
-      setMessage(`Álbum excluído: ${collectionName}`);
+      await deleteAlbum(albumId);
+      const nextAlbums = albumsRef.current.filter((album) => album.id !== albumId);
+      albumsRef.current = nextAlbums;
+      setAlbums(nextAlbums);
+      setItems((current) =>
+        current.map((item) => ({
+          ...item,
+          albumIds: item.albumIds.filter((id) => id !== albumId),
+        })),
+      );
+      setSelectedView((current) =>
+        current.kind === "album" && current.id === albumId
+          ? { kind: "library", id: "all-files" }
+          : current,
+      );
+      setAlbumContextMenu(null);
+      setMessage(`Álbum excluído: ${albumName}`);
       setError("");
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Não foi possível excluir o álbum.");
@@ -328,20 +616,98 @@ export function App() {
     setError("");
 
     try {
-      await uploadFiles(Array.from(fileList), selectedCollectionId);
-      const [nextItems, nextCollections] = await Promise.all([
-        getLibraryItems(),
-        getCollections(),
-      ]);
-      collectionsRef.current = nextCollections;
+      const targetAlbumId = selectedView.kind === "album" ? selectedView.id : undefined;
+      await uploadFiles(Array.from(fileList), targetAlbumId);
+
+      const [nextItems, nextAlbums] = await Promise.all([getLibraryItems(), getAlbums()]);
+      albumsRef.current = nextAlbums;
       setItems(nextItems);
-      setCollections(nextCollections);
+      setAlbums(nextAlbums);
       setMessage(`${fileList.length} arquivo(s) adicionado(s) à biblioteca.`);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Falha ao adicionar arquivos.");
     } finally {
       setIsBusy(false);
     }
+  }
+
+  async function handleToggleFavorite(itemId: string): Promise<void> {
+    try {
+      const response = await toggleFavorite(itemId);
+      updateItemInState(response.item);
+      setMessage(response.item.isFavorite ? "Arquivo adicionado aos favoritos." : "Arquivo removido dos favoritos.");
+      setError("");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível atualizar o favorito.");
+    }
+  }
+
+  async function handleMoveToTrash(itemId: string): Promise<void> {
+    try {
+      const response = await moveToTrash(itemId);
+      updateItemInState(response.item);
+      setMessage("Arquivo movido para a lixeira.");
+      setError("");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível mover o arquivo para a lixeira.");
+    }
+  }
+
+  async function handleRestoreFromTrash(itemId: string): Promise<void> {
+    try {
+      const response = await restoreFromTrash(itemId);
+      updateItemInState(response.item);
+      setMessage("Arquivo restaurado.");
+      setError("");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível restaurar o arquivo.");
+    }
+  }
+
+  async function handleDeleteItem(itemId: string): Promise<void> {
+    const confirmed = window.confirm("Excluir este arquivo permanentemente?");
+    if (!confirmed) return;
+
+    try {
+      await deleteLibraryItem(itemId);
+      removeItemFromState(itemId);
+      setMessage("Arquivo excluído permanentemente.");
+      setError("");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível excluir o arquivo.");
+    }
+  }
+
+  function handleAccentInputChange(nextValue: string): void {
+    const uppercased = nextValue.toUpperCase();
+    setAccentInput(uppercased);
+
+    const normalized = normalizeHexColor(uppercased);
+    if (normalized) {
+      setAccentColor(normalized);
+      setAccentInputError("");
+      return;
+    }
+
+    if (uppercased.trim().length === 0) {
+      setAccentInputError("");
+      return;
+    }
+
+    setAccentInputError("Use um HEX válido, como #1997FF.");
+  }
+
+  function handleAccentInputBlur(): void {
+    const normalized = normalizeHexColor(accentInput);
+    if (normalized) {
+      setAccentColor(normalized);
+      setAccentInput(normalized);
+      setAccentInputError("");
+      return;
+    }
+
+    setAccentInput(accentColor);
+    setAccentInputError("");
   }
 
   async function handleStartDragging(event: MouseEvent<HTMLElement>): Promise<void> {
@@ -430,74 +796,154 @@ export function App() {
     await handleFiles(event.dataTransfer.files);
   }
 
-  function handleCollectionDragStart(event: DragEvent<HTMLElement>, collectionId: string): void {
-    event.stopPropagation();
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", collectionId);
-    setDraggedCollectionId(collectionId);
-    setDragOverCollectionId(null);
-    setContextMenu(null);
-    reorderDirtyRef.current = false;
-  }
-
-  function handleCollectionDragOver(event: DragEvent<HTMLElement>, targetCollectionId: string): void {
+  function handleAlbumContextMenu(event: MouseEvent<HTMLElement>, albumId: string, albumName: string): void {
     event.preventDefault();
     event.stopPropagation();
-    event.dataTransfer.dropEffect = "move";
-
-    const draggedId = draggedCollectionId ?? event.dataTransfer.getData("text/plain");
-    if (!draggedId || draggedId === targetCollectionId) {
-      return;
-    }
-
-    const currentOrder = collectionsRef.current.map((collection) => collection.id).join("|");
-    const nextCollections = moveCollection(collectionsRef.current, draggedId, targetCollectionId);
-    const nextOrder = nextCollections.map((collection) => collection.id).join("|");
-
-    if (currentOrder === nextOrder) {
-      return;
-    }
-
-    collectionsRef.current = nextCollections;
-    reorderDirtyRef.current = true;
-    setCollections(nextCollections);
-    setDragOverCollectionId(targetCollectionId);
+    setAlbumContextMenu({ x: event.clientX, y: event.clientY, albumId, albumName });
   }
 
-  function handleCollectionDrop(event: DragEvent<HTMLElement>, targetCollectionId: string): void {
-    event.preventDefault();
-    event.stopPropagation();
-    setDragOverCollectionId(targetCollectionId);
-  }
-
-  async function persistReorderedCollections(): Promise<void> {
-    try {
-      const orderedIds = collectionsRef.current.map((collection) => collection.id);
-      const response = await reorderCollectionOrder(orderedIds);
-      collectionsRef.current = response.collections;
-      setCollections(response.collections);
-      setMessage("Ordem dos álbuns atualizada.");
-      setError("");
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível salvar a nova ordem.");
+  function renderCardActions(item: LibraryItem) {
+    if (item.isTrashed) {
+      return (
+        <div className="file-actions">
+          <button type="button" className="file-action-button" onClick={() => void handleRestoreFromTrash(item.id)}>
+            Restore
+          </button>
+          <button type="button" className="file-action-button danger" onClick={() => void handleDeleteItem(item.id)}>
+            Delete
+          </button>
+        </div>
+      );
     }
+
+    return (
+      <div className="file-actions">
+        <button type="button" className={`file-action-button ${item.isFavorite ? "active" : ""}`} onClick={() => void handleToggleFavorite(item.id)}>
+          {item.isFavorite ? "Unfavorite" : "Favorite"}
+        </button>
+        <button type="button" className="file-action-button" onClick={() => void handleMoveToTrash(item.id)}>
+          Trash
+        </button>
+      </div>
+    );
   }
 
-  function handleCollectionDragEnd(): void {
-    const shouldPersist = reorderDirtyRef.current;
-    reorderDirtyRef.current = false;
-    setDraggedCollectionId(null);
-    setDragOverCollectionId(null);
+  function closeSettingsModal(): void {
+    setIsSettingsOpen(false);
+  }
 
-    if (shouldPersist) {
-      void persistReorderedCollections();
+  function renderSettingsModalContent() {
+    if (settingsSection === "discord") {
+      return (
+        <>
+          <div className="settings-modal-header">
+            <div>
+              <h2>Discord</h2>
+              <p>Conecte sua conta para sincronizar a identidade do Discasa futuramente.</p>
+            </div>
+          </div>
+
+          <div className="settings-card">
+            <div className="settings-label">Discord</div>
+            <div className={`settings-status ${sessionName ? "connected" : "disconnected"}`}>
+              {sessionName ? "Connected" : "Not connected"}
+            </div>
+            <button className="primary-button" onClick={openDiscordLogin}>
+              Login with Discord
+            </button>
+          </div>
+        </>
+      );
     }
-  }
 
-  function handleCollectionContextMenu(event: MouseEvent<HTMLElement>, collectionId: string, collectionName: string): void {
-    event.preventDefault();
-    event.stopPropagation();
-    setContextMenu({ x: event.clientX, y: event.clientY, collectionId, collectionName });
+    if (settingsSection === "appearance") {
+      return (
+        <>
+          <div className="settings-modal-header">
+            <div>
+              <h2>Appearance</h2>
+              <p>Escolha a cor de destaque usada pelos elementos coloridos da interface.</p>
+            </div>
+          </div>
+
+          <div className="settings-card">
+            <div className="settings-label">Appearance</div>
+            <div className="settings-field-stack">
+              <label className="settings-input-label" htmlFor="accent-hex">
+                Accent color (HEX)
+              </label>
+              <div className="settings-color-row">
+                <span className="settings-color-preview" aria-hidden="true" style={{ backgroundColor: accentColor }} />
+                <input
+                  id="accent-hex"
+                  className="settings-text-input"
+                  type="text"
+                  inputMode="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="#1997FF"
+                  value={accentInput}
+                  onChange={(event) => handleAccentInputChange(event.currentTarget.value)}
+                  onBlur={handleAccentInputBlur}
+                />
+              </div>
+              <span className={`settings-input-help ${accentInputError ? "error" : ""}`}>
+                {accentInputError || "A nova cor é aplicada assim que o HEX fica válido."}
+              </span>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <div className="settings-modal-header">
+          <div>
+            <h2>Window</h2>
+            <p>Defina como o Discasa se comporta ao minimizar ou fechar.</p>
+          </div>
+        </div>
+
+        <div className="settings-card">
+          <div className="settings-label">Window</div>
+
+          <label className="settings-toggle" htmlFor="minimize-to-tray">
+            <div className="settings-toggle-copy">
+              <span className="settings-toggle-title">Minimizar para a bandeja</span>
+              <span className="settings-toggle-description">
+                Ao minimizar, esconder o app na área de notificação.
+              </span>
+            </div>
+            <input
+              id="minimize-to-tray"
+              className="settings-switch-input"
+              type="checkbox"
+              checked={minimizeToTray}
+              onChange={(event) => setMinimizeToTray(event.currentTarget.checked)}
+            />
+            <span className="settings-switch" aria-hidden="true" />
+          </label>
+
+          <label className="settings-toggle" htmlFor="close-to-tray">
+            <div className="settings-toggle-copy">
+              <span className="settings-toggle-title">Fechar para a bandeja</span>
+              <span className="settings-toggle-description">
+                Ao fechar, manter o app rodando em segundo plano na bandeja.
+              </span>
+            </div>
+            <input
+              id="close-to-tray"
+              className="settings-switch-input"
+              type="checkbox"
+              checked={closeToTray}
+              onChange={(event) => setCloseToTray(event.currentTarget.checked)}
+            />
+            <span className="settings-switch" aria-hidden="true" />
+          </label>
+        </div>
+      </>
+    );
   }
 
   return (
@@ -512,6 +958,21 @@ export function App() {
           </div>
 
           <div className="window-controls">
+            <button
+              type="button"
+              className="window-button"
+              onClick={() => {
+                setAlbumContextMenu(null);
+                setSettingsSection("discord");
+                setIsSettingsOpen(true);
+              }}
+              aria-label="Abrir configurações"
+              title="Abrir configurações"
+            >
+              <span className="window-glyph icon-glyph">
+                <SettingsIcon />
+              </span>
+            </button>
             <button type="button" className="window-button" onClick={() => void handleMinimize()} aria-label="Minimizar">
               <span className="window-glyph minimize" />
             </button>
@@ -526,125 +987,124 @@ export function App() {
 
         <div className="workspace">
           <aside className={`sidebar-panel ${isSidebarCollapsed ? "collapsed" : ""}`}>
-            {page === "library" ? (
-              <>
-                <div className="albums-scroll">
-                  {sidebarEntries.map((entry) => {
-                    const isReorderable = !entry.isSystem;
-                    const selected = selectedCollectionId === entry.id;
+            <div className="sidebar-topbar">
+              <button
+                type="button"
+                className="sidebar-toggle-button"
+                onClick={() => setIsSidebarCollapsed((current) => !current)}
+                aria-label={isSidebarCollapsed ? "Expandir barra lateral" : "Reduzir barra lateral"}
+                title={isSidebarCollapsed ? "Expandir barra lateral" : "Reduzir barra lateral"}
+              >
+                {isSidebarCollapsed ? <ChevronRightDoubleIcon /> : <ChevronLeftDoubleIcon />}
+              </button>
+            </div>
 
-                    return (
-                      <div
-                        key={entry.id}
-                        role="button"
-                        tabIndex={0}
-                        className={`album-row ${selected ? "selected" : ""} ${dragOverCollectionId === entry.id ? "drag-over" : ""} ${draggedCollectionId === entry.id ? "dragging" : ""} ${entry.isSystem ? "system-row" : ""} ${isReorderable ? "reorderable" : ""}`}
-                        onClick={() => {
-                          setSelectedCollectionId(entry.id);
-                          setContextMenu(null);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setSelectedCollectionId(entry.id);
-                            setContextMenu(null);
-                          }
-                        }}
-                        onContextMenu={isReorderable ? (event) => handleCollectionContextMenu(event, entry.id, entry.name) : undefined}
-                        draggable={isReorderable}
-                        onDragStart={isReorderable ? (event) => handleCollectionDragStart(event, entry.id) : undefined}
-                        onDragOver={isReorderable ? (event) => handleCollectionDragOver(event, entry.id) : undefined}
-                        onDrop={isReorderable ? (event) => handleCollectionDrop(event, entry.id) : undefined}
-                        onDragEnd={isReorderable ? handleCollectionDragEnd : undefined}
-                        title={entry.name}
-                      >
-                        <div className="album-leading">
-                          <span className="album-icon-wrap">
-                            <FolderIcon filled={selected} />
-                          </span>
-                          <span className="album-label">{entry.name}</span>
-                        </div>
-                        <small>{entry.itemCount}</small>
-                      </div>
-                    );
-                  })}
-                </div>
+            <div className="sidebar-scroll">
+              <section className="sidebar-section">
+                {!isSidebarCollapsed ? <h2 className="sidebar-section-title">Library</h2> : null}
 
-                <div className="sidebar-actions">
+                <button
+                  type="button"
+                  className={`sidebar-item ${selectedView.kind === "library" && selectedView.id === "all-files" ? "selected" : ""}`}
+                  onClick={() => openLibraryView({ kind: "library", id: "all-files" })}
+                  title="All Files"
+                >
+                  <span className="sidebar-item-icon"><LibraryIcon /></span>
+                  {!isSidebarCollapsed ? <span className="sidebar-item-label">All Files</span> : null}
+                </button>
+
+                <button
+                  type="button"
+                  className={`sidebar-item ${selectedView.kind === "library" && selectedView.id === "favorites" ? "selected" : ""}`}
+                  onClick={() => openLibraryView({ kind: "library", id: "favorites" })}
+                  title="Favorites"
+                >
+                  <span className="sidebar-item-icon"><HeartIcon /></span>
+                  {!isSidebarCollapsed ? <span className="sidebar-item-label">Favorites</span> : null}
+                </button>
+
+                <button
+                  type="button"
+                  className={`sidebar-item ${selectedView.kind === "library" && selectedView.id === "trash" ? "selected" : ""}`}
+                  onClick={() => openLibraryView({ kind: "library", id: "trash" })}
+                  title="Trash"
+                >
+                  <span className="sidebar-item-icon"><TrashIcon /></span>
+                  {!isSidebarCollapsed ? <span className="sidebar-item-label">Trash</span> : null}
+                </button>
+              </section>
+
+              <section className="sidebar-section">
+                {!isSidebarCollapsed ? <h2 className="sidebar-section-title">Collections</h2> : null}
+
+                <button
+                  type="button"
+                  className={`sidebar-item ${selectedView.kind === "collection" && selectedView.id === "pictures" ? "selected" : ""}`}
+                  onClick={() => openLibraryView({ kind: "collection", id: "pictures" })}
+                  title="Pictures"
+                >
+                  <span className="sidebar-item-icon"><PictureIcon /></span>
+                  {!isSidebarCollapsed ? <span className="sidebar-item-label">Pictures</span> : null}
+                </button>
+
+                <button
+                  type="button"
+                  className={`sidebar-item ${selectedView.kind === "collection" && selectedView.id === "videos" ? "selected" : ""}`}
+                  onClick={() => openLibraryView({ kind: "collection", id: "videos" })}
+                  title="Videos"
+                >
+                  <span className="sidebar-item-icon"><VideoIcon /></span>
+                  {!isSidebarCollapsed ? <span className="sidebar-item-label">Videos</span> : null}
+                </button>
+
+                <button
+                  type="button"
+                  className={`sidebar-item ${selectedView.kind === "collection" && selectedView.id === "others" ? "selected" : ""}`}
+                  onClick={() => openLibraryView({ kind: "collection", id: "others" })}
+                  title="Others"
+                >
+                  <span className="sidebar-item-icon"><FolderIcon /></span>
+                  {!isSidebarCollapsed ? <span className="sidebar-item-label">Others</span> : null}
+                </button>
+              </section>
+
+              <section className="sidebar-section album-section">
+                {!isSidebarCollapsed ? <h2 className="sidebar-section-title">Albums</h2> : null}
+
+                {albums.map((album) => (
                   <button
-                    className="icon-action"
-                    onClick={() => setIsSidebarCollapsed((current) => !current)}
-                    aria-label={isSidebarCollapsed ? "Expandir barra lateral" : "Reduzir barra lateral"}
-                    title={isSidebarCollapsed ? "Expandir barra lateral" : "Reduzir barra lateral"}
+                    key={album.id}
+                    type="button"
+                    className={`sidebar-item ${selectedView.kind === "album" && selectedView.id === album.id ? "selected" : ""}`}
+                    onClick={() => openLibraryView({ kind: "album", id: album.id })}
+                    onContextMenu={(event) => handleAlbumContextMenu(event, album.id, album.name)}
+                    title={album.name}
                   >
-                    {isSidebarCollapsed ? <ChevronRightDoubleIcon /> : <ChevronLeftDoubleIcon />}
+                    <span className="sidebar-item-icon"><FolderIcon /></span>
+                    {!isSidebarCollapsed ? <span className="sidebar-item-label">{album.name}</span> : null}
                   </button>
-                  <button className="icon-action" onClick={() => void handleCreateCollection()} aria-label="Criar novo álbum" title="Criar novo álbum">
-                    <PlusIcon />
-                  </button>
-                  <button className="icon-action settings-action" onClick={() => setPage("settings")} aria-label="Abrir configurações" title="Abrir configurações">
-                    <SettingsIcon />
-                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  className={`sidebar-item add-album-item ${albums.length === 0 ? "empty-slot" : ""}`}
+                  onClick={openCreateAlbumModal}
+                  title="Criar álbum"
+                >
+                  <span className="sidebar-item-icon"><PlusIcon /></span>
+                </button>
+              </section>
+            </div>
+
+            <footer className="sidebar-profile">
+              <div className="profile-avatar" aria-hidden="true" />
+              {!isSidebarCollapsed ? (
+                <div className="profile-copy">
+                  <strong>{profile.nickname}</strong>
+                  <span>{profile.server}</span>
                 </div>
-              </>
-            ) : (
-              <div className="settings-panel">
-                <div>
-                  <h2>Settings</h2>
-                  <p>Estado atual do login do Discord.</p>
-                </div>
-
-                <div className="settings-card">
-                  <div className="settings-label">Discord</div>
-                  <div className={`settings-status ${isAuthenticated ? "connected" : "disconnected"}`}>
-                    {isAuthenticated ? "Connected" : "Not connected"}
-                  </div>
-                  <button className="primary-button" onClick={openDiscordLogin}>
-                    Login with Discord
-                  </button>
-                </div>
-
-                <div className="settings-card">
-                  <div className="settings-label">Janela</div>
-
-                  <label className="settings-toggle" htmlFor="minimize-to-tray">
-                    <div className="settings-toggle-copy">
-                      <span className="settings-toggle-title">Minimizar para a bandeja</span>
-                      <span className="settings-toggle-description">
-                        Ao minimizar, esconder o app na área de notificação.
-                      </span>
-                    </div>
-                    <input
-                      id="minimize-to-tray"
-                      className="settings-switch-input"
-                      type="checkbox"
-                      checked={minimizeToTray}
-                      onChange={(event) => setMinimizeToTray(event.currentTarget.checked)}
-                    />
-                    <span className="settings-switch" aria-hidden="true" />
-                  </label>
-
-                  <label className="settings-toggle" htmlFor="close-to-tray">
-                    <div className="settings-toggle-copy">
-                      <span className="settings-toggle-title">Fechar para a bandeja</span>
-                      <span className="settings-toggle-description">
-                        Ao fechar, manter o app rodando em segundo plano na bandeja.
-                      </span>
-                    </div>
-                    <input
-                      id="close-to-tray"
-                      className="settings-switch-input"
-                      type="checkbox"
-                      checked={closeToTray}
-                      onChange={(event) => setCloseToTray(event.currentTarget.checked)}
-                    />
-                    <span className="settings-switch" aria-hidden="true" />
-                  </label>
-                </div>
-
-                <button className="secondary-button" onClick={() => setPage("library")}>Voltar</button>
-              </div>
-            )}
+              ) : null}
+            </footer>
           </aside>
 
           <main
@@ -652,65 +1112,184 @@ export function App() {
             onDragEnter={handleFileDragEnter}
             onDragLeave={handleFileDragLeave}
             onDragOver={handleFileDragOver}
-            onDrop={(event) => {
-              void handleFileDrop(event);
-            }}
+            onDrop={(event) => { void handleFileDrop(event); }}
           >
-            {page === "library" ? (
-              <>
-                <div className="files-grid">
-                  {visibleItems.map((item) => (
-                    <article key={item.id} className="file-card" title={item.name}>
-                      <div className="file-preview" />
-                      <div className="file-meta">
-                        <strong>{item.name}</strong>
-                        <small>{formatBytes(item.size)}</small>
-                      </div>
-                    </article>
-                  ))}
-                  {visibleItems.length === 0 && !isBusy && (
-                    <div className="empty-state">
-                      <strong>Nenhum arquivo ainda.</strong>
-                      <span>Arraste arquivos do Explorer para esta área.</span>
-                    </div>
-                  )}
-                </div>
-
-                {isDraggingFiles && (
-                  <div className="drop-overlay">
-                    <strong>Solte os arquivos aqui</strong>
-                    <span>Eles serão adicionados à visualização atual.</span>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="settings-placeholder">
-                <strong>Abra a biblioteca para visualizar os arquivos.</strong>
+            <div className="library-header">
+              <div>
+                <h1>{currentTitle}</h1>
+                <p>{currentDescription}</p>
               </div>
-            )}
+              <button
+                type="button"
+                className="upload-button"
+                onClick={() => document.getElementById("discasa-upload-input")?.click()}
+                aria-label="Upload"
+                title="Upload"
+              >
+                <UploadIcon />
+              </button>
+              <input
+                id="discasa-upload-input"
+                className="hidden-upload-input"
+                type="file"
+                multiple
+                onChange={(event) => {
+                  void handleFiles(event.currentTarget.files);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </div>
+
+            <div className="files-grid">
+              {visibleItems.map((item) => (
+                <article key={item.id} className="file-card" title={item.name}>
+                  <div className="file-preview">
+                    <span className="file-type-chip">
+                      {item.isTrashed ? "TRASH" : isImage(item) ? "IMG" : isVideo(item) ? "VID" : "FILE"}
+                    </span>
+                  </div>
+                  <div className="file-meta">
+                    <strong>{item.name}</strong>
+                    <small>{new Intl.NumberFormat("en-US").format(item.size)} bytes</small>
+                    {renderCardActions(item)}
+                  </div>
+                </article>
+              ))}
+
+              {visibleItems.length === 0 && !isBusy ? (
+                <button
+                  type="button"
+                  className="empty-state"
+                  onClick={() => document.getElementById("discasa-upload-input")?.click()}
+                >
+                  <strong>Nenhum arquivo ainda.</strong>
+                  <span>Arraste arquivos do Explorer para esta área ou clique para enviar.</span>
+                </button>
+              ) : null}
+            </div>
+
+            {isDraggingFiles ? (
+              <div className="drop-overlay">
+                <strong>Solte os arquivos aqui</strong>
+                <span>Eles serão adicionados à visualização atual.</span>
+              </div>
+            ) : null}
           </main>
         </div>
       </div>
 
-      {contextMenu && (
+      {isCreateAlbumOpen ? (
+        <div className="album-modal-root" role="dialog" aria-modal="true" aria-label="Criar novo álbum">
+          <button type="button" className="album-modal-backdrop" aria-label="Cancelar criação do álbum" onClick={closeCreateAlbumModal} />
+          <div className="album-modal">
+            <button type="button" className="album-modal-close" onClick={closeCreateAlbumModal} aria-label="Fechar criação do álbum">
+              <span className="album-modal-close-glyph">×</span>
+            </button>
+
+            <form className="album-modal-content" onSubmit={(event) => void handleCreateAlbumSubmit(event)}>
+              <div className="album-modal-header">
+                <h2>Novo álbum</h2>
+                <p>Escolha um nome para a nova pasta da seção Albums.</p>
+              </div>
+
+              <div className="album-modal-field">
+                <label className="album-modal-label" htmlFor="new-album-name">
+                  Nome do álbum
+                </label>
+                <input
+                  ref={createAlbumInputRef}
+                  id="new-album-name"
+                  className="album-modal-input"
+                  type="text"
+                  value={newAlbumName}
+                  onChange={(event) => {
+                    setNewAlbumName(event.currentTarget.value);
+                    if (createAlbumError) {
+                      setCreateAlbumError("");
+                    }
+                  }}
+                  placeholder="Digite o nome do álbum"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={isCreatingAlbum}
+                />
+                {createAlbumError ? <span className="album-modal-error">{createAlbumError}</span> : null}
+              </div>
+
+              <div className="album-modal-actions">
+                <button type="submit" className="album-modal-confirm" disabled={isCreatingAlbum}>
+                  {isCreatingAlbum ? "Criando..." : "OK"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isSettingsOpen ? (
+        <div className="settings-modal-root" role="dialog" aria-modal="true" aria-label="Configurações do Discasa">
+          <button type="button" className="settings-modal-backdrop" aria-label="Fechar configurações" onClick={closeSettingsModal} />
+          <div className="settings-modal">
+            <aside className="settings-modal-sidebar">
+              <div className="settings-modal-profile">
+                <div className="settings-modal-avatar" aria-hidden="true" />
+                <div className="settings-modal-profile-copy">
+                  <strong>{profile.nickname}</strong>
+                  <span>{profile.server}</span>
+                </div>
+              </div>
+
+              <div className="settings-modal-nav-group">
+                <span className="settings-modal-nav-label">Configurações</span>
+                <button type="button" className={`settings-modal-nav-item ${settingsSection === "discord" ? "active" : ""}`} onClick={() => setSettingsSection("discord")}>
+                  Discord
+                </button>
+                <button type="button" className={`settings-modal-nav-item ${settingsSection === "appearance" ? "active" : ""}`} onClick={() => setSettingsSection("appearance")}>
+                  Appearance
+                </button>
+                <button type="button" className={`settings-modal-nav-item ${settingsSection === "window" ? "active" : ""}`} onClick={() => setSettingsSection("window")}>
+                  Window
+                </button>
+              </div>
+            </aside>
+
+            <section className="settings-modal-content">
+              <button type="button" className="settings-modal-close" onClick={closeSettingsModal} aria-label="Fechar configurações">
+                <span className="settings-modal-close-glyph">×</span>
+              </button>
+              {renderSettingsModalContent()}
+            </section>
+          </div>
+        </div>
+      ) : null}
+
+      {albumContextMenu ? (
         <div
           className="context-menu"
-          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          style={{ left: `${albumContextMenu.x}px`, top: `${albumContextMenu.y}px` }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <button
             type="button"
             className="context-menu-item"
-            onClick={() => void handleMoveCollection(contextMenu.collectionId, "up")}
-            disabled={!canMoveCollection(contextMenu.collectionId, "up")}
+            onClick={() => void handleRenameAlbum(albumContextMenu.albumId, albumContextMenu.albumName)}
+          >
+            Renomear
+          </button>
+          <div className="context-menu-separator" />
+          <button
+            type="button"
+            className="context-menu-item"
+            onClick={() => void handleMoveAlbum(albumContextMenu.albumId, "up")}
+            disabled={!canMoveAlbum(albumContextMenu.albumId, "up")}
           >
             Mover para cima
           </button>
           <button
             type="button"
             className="context-menu-item"
-            onClick={() => void handleMoveCollection(contextMenu.collectionId, "down")}
-            disabled={!canMoveCollection(contextMenu.collectionId, "down")}
+            onClick={() => void handleMoveAlbum(albumContextMenu.albumId, "down")}
+            disabled={!canMoveAlbum(albumContextMenu.albumId, "down")}
           >
             Mover para baixo
           </button>
@@ -718,19 +1297,19 @@ export function App() {
           <button
             type="button"
             className="context-menu-item danger"
-            onClick={() => void handleDeleteCollection(contextMenu.collectionId, contextMenu.collectionName)}
+            onClick={() => void handleDeleteAlbum(albumContextMenu.albumId, albumContextMenu.albumName)}
           >
-            Excluir pasta
+            Excluir álbum
           </button>
         </div>
-      )}
+      ) : null}
 
-      {(message || error) && (
+      {(message || error) ? (
         <div className="status-toast">
           {message ? <span>{message}</span> : null}
           {error ? <span className="status-error">{error}</span> : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
