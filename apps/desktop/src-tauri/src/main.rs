@@ -17,8 +17,8 @@ fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 fn main() {
   tauri::Builder::default()
     .setup(|app| {
-      let show_item = MenuItem::with_id(app, "show", "Mostrar Discasa", true, None::<&str>)?;
-      let quit_item = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
+      let show_item = MenuItem::with_id(app, "show", "Show Discasa", true, None::<&str>)?;
+      let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
       let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
       let tray_icon = app.default_window_icon().unwrap().clone();

@@ -23,7 +23,7 @@ echo This soft reset preserves:
 echo - apps\server\.discasa-data
 echo - local UI storage (accent color, sidebar state, etc.)
 echo.
-choice /M "Continue"
+choice /C YN /M "Continue"
 if errorlevel 2 (
   echo Cancelled.
   exit /b 0
@@ -42,7 +42,7 @@ echo.
 echo Soft reset complete.
 echo.
 
-choice /M "Run npm install now"
+choice /C YN /M "Run npm install now"
 if errorlevel 2 goto ask_start
 
 echo.
@@ -61,7 +61,7 @@ echo npm install finished successfully.
 echo.
 
 :ask_start
-choice /M "Start the app now"
+choice /C YN /M "Start the app now"
 if errorlevel 2 goto end
 
 echo.

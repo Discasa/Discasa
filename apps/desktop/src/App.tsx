@@ -361,10 +361,10 @@ export function App() {
 
         try {
           await appWindow.hide();
-          setMessage("Discasa enviado para a bandeja.");
+          setMessage("Discasa was sent to the system tray.");
           setError("");
         } catch {
-          setError("Não foi possível enviar o app para a bandeja.");
+          setError("Could not send the app to the system tray.");
         }
       })
       .then((fn) => {
@@ -456,15 +456,15 @@ export function App() {
   const currentDescription = useMemo(() => {
     switch (selectedView.kind) {
       case "library":
-        if (selectedView.id === "all-files") return "Todos os arquivos ativos da biblioteca.";
-        if (selectedView.id === "favorites") return "Arquivos marcados como favoritos.";
-        return "Itens enviados para a lixeira.";
+        if (selectedView.id === "all-files") return "All active files in the library.";
+        if (selectedView.id === "favorites") return "Files marked as favorites.";
+        return "Items moved to the trash.";
       case "collection":
-        if (selectedView.id === "pictures") return "Somente arquivos de imagem.";
-        if (selectedView.id === "videos") return "Somente arquivos de vídeo.";
-        return "Arquivos que não são imagem nem vídeo.";
+        if (selectedView.id === "pictures") return "Image files only.";
+        if (selectedView.id === "videos") return "Video files only.";
+        return "Files that are neither images nor videos.";
       case "album":
-        return "Arquivos vinculados a este álbum.";
+        return "Files linked to this album.";
       default:
         return "";
     }
@@ -513,7 +513,7 @@ export function App() {
 
     const trimmed = newAlbumName.trim();
     if (!trimmed) {
-      setCreateAlbumError("Digite um nome para o álbum.");
+      setCreateAlbumError("Enter an album name.");
       return;
     }
 
@@ -526,19 +526,19 @@ export function App() {
       albumsRef.current = nextAlbums;
       setAlbums(nextAlbums);
       setSelectedView({ kind: "album", id: result.id });
-      setMessage(`Álbum criado: ${trimmed}`);
+      setMessage(`Album created: ${trimmed}`);
       setError("");
       setIsCreateAlbumOpen(false);
       setNewAlbumName("");
     } catch (caughtError) {
-      setCreateAlbumError(caughtError instanceof Error ? caughtError.message : "Não foi possível criar o álbum.");
+      setCreateAlbumError(caughtError instanceof Error ? caughtError.message : "Could not create the album.");
     } finally {
       setIsCreatingAlbum(false);
     }
   }
 
   async function handleRenameAlbum(albumId: string, currentName: string): Promise<void> {
-    const nextName = window.prompt("Novo nome do álbum:", currentName);
+    const nextName = window.prompt("New album name:", currentName);
     if (!nextName || !nextName.trim()) return;
 
     try {
@@ -550,10 +550,10 @@ export function App() {
       albumsRef.current = nextAlbums;
       setAlbums(nextAlbums);
       setAlbumContextMenu(null);
-      setMessage(`Álbum renomeado para: ${trimmed}`);
+      setMessage(`Album renamed to: ${trimmed}`);
       setError("");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível renomear o álbum.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not rename the album.");
     }
   }
 
@@ -574,15 +574,15 @@ export function App() {
       albumsRef.current = response.albums;
       setAlbums(response.albums);
       setAlbumContextMenu(null);
-      setMessage(`Álbum movido para ${direction === "up" ? "cima" : "baixo"}.`);
+      setMessage(`Album moved ${direction === "up" ? "up" : "down"}.`);
       setError("");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível mover o álbum.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not move the album.");
     }
   }
 
   async function handleDeleteAlbum(albumId: string, albumName: string): Promise<void> {
-    const confirmed = window.confirm(`Excluir o álbum "${albumName}"?`);
+    const confirmed = window.confirm(`Delete the album "${albumName}"?`);
     if (!confirmed) return;
 
     try {
@@ -602,10 +602,10 @@ export function App() {
           : current,
       );
       setAlbumContextMenu(null);
-      setMessage(`Álbum excluído: ${albumName}`);
+      setMessage(`Album deleted: ${albumName}`);
       setError("");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível excluir o álbum.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not delete the album.");
     }
   }
 
@@ -623,9 +623,9 @@ export function App() {
       albumsRef.current = nextAlbums;
       setItems(nextItems);
       setAlbums(nextAlbums);
-      setMessage(`${fileList.length} arquivo(s) adicionado(s) à biblioteca.`);
+      setMessage(`${fileList.length} file(s) added to the library.`);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Falha ao adicionar arquivos.");
+      setError(caughtError instanceof Error ? caughtError.message : "Failed to add files.");
     } finally {
       setIsBusy(false);
     }
@@ -635,10 +635,10 @@ export function App() {
     try {
       const response = await toggleFavorite(itemId);
       updateItemInState(response.item);
-      setMessage(response.item.isFavorite ? "Arquivo adicionado aos favoritos." : "Arquivo removido dos favoritos.");
+      setMessage(response.item.isFavorite ? "File added to favorites." : "File removed from favorites.");
       setError("");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível atualizar o favorito.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not update the favorite state.");
     }
   }
 
@@ -646,10 +646,10 @@ export function App() {
     try {
       const response = await moveToTrash(itemId);
       updateItemInState(response.item);
-      setMessage("Arquivo movido para a lixeira.");
+      setMessage("File moved to the trash.");
       setError("");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível mover o arquivo para a lixeira.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not move the file to the trash.");
     }
   }
 
@@ -657,24 +657,24 @@ export function App() {
     try {
       const response = await restoreFromTrash(itemId);
       updateItemInState(response.item);
-      setMessage("Arquivo restaurado.");
+      setMessage("File restored.");
       setError("");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível restaurar o arquivo.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not restore the file.");
     }
   }
 
   async function handleDeleteItem(itemId: string): Promise<void> {
-    const confirmed = window.confirm("Excluir este arquivo permanentemente?");
+    const confirmed = window.confirm("Delete this file permanently?");
     if (!confirmed) return;
 
     try {
       await deleteLibraryItem(itemId);
       removeItemFromState(itemId);
-      setMessage("Arquivo excluído permanentemente.");
+      setMessage("File permanently deleted.");
       setError("");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Não foi possível excluir o arquivo.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not delete the file.");
     }
   }
 
@@ -694,7 +694,7 @@ export function App() {
       return;
     }
 
-    setAccentInputError("Use um HEX válido, como #1997FF.");
+    setAccentInputError("Use a valid HEX value, such as #E9881D.");
   }
 
   function handleAccentInputBlur(): void {
@@ -726,14 +726,14 @@ export function App() {
     try {
       if (minimizeToTray) {
         await appWindow.hide();
-        setMessage("Discasa enviado para a bandeja.");
+        setMessage("Discasa was sent to the system tray.");
         setError("");
         return;
       }
 
       await appWindow.minimize();
     } catch {
-      setError("Não foi possível minimizar o app.");
+      setError("Could not minimize the app.");
     }
   }
 
@@ -751,14 +751,14 @@ export function App() {
     try {
       if (closeToTrayRef.current) {
         await appWindow.hide();
-        setMessage("Discasa enviado para a bandeja.");
+        setMessage("Discasa was sent to the system tray.");
         setError("");
         return;
       }
 
       await appWindow.destroy();
     } catch {
-      setError("Não foi possível fechar o app.");
+      setError("Could not close the app.");
     }
   }
 
@@ -839,7 +839,7 @@ export function App() {
           <div className="settings-modal-header">
             <div>
               <h2>Discord</h2>
-              <p>Conecte sua conta para sincronizar a identidade do Discasa futuramente.</p>
+              <p>Connect your account to sync Discasa identity data in the future.</p>
             </div>
           </div>
 
@@ -862,7 +862,7 @@ export function App() {
           <div className="settings-modal-header">
             <div>
               <h2>Appearance</h2>
-              <p>Escolha a cor de destaque usada pelos elementos coloridos da interface.</p>
+              <p>Choose the accent color used by the colored elements across the interface.</p>
             </div>
           </div>
 
@@ -881,7 +881,7 @@ export function App() {
                   inputMode="text"
                   autoComplete="off"
                   spellCheck={false}
-                  placeholder="#1997FF"
+                  placeholder="#E9881D"
                   value={accentInput}
                   onChange={(event) => handleAccentInputChange(event.currentTarget.value)}
                   onBlur={handleAccentInputBlur}
@@ -901,7 +901,7 @@ export function App() {
         <div className="settings-modal-header">
           <div>
             <h2>Window</h2>
-            <p>Defina como o Discasa se comporta ao minimizar ou fechar.</p>
+            <p>Choose how Discasa behaves when minimizing or closing.</p>
           </div>
         </div>
 
@@ -910,9 +910,9 @@ export function App() {
 
           <label className="settings-toggle" htmlFor="minimize-to-tray">
             <div className="settings-toggle-copy">
-              <span className="settings-toggle-title">Minimizar para a bandeja</span>
+              <span className="settings-toggle-title">Minimize to tray</span>
               <span className="settings-toggle-description">
-                Ao minimizar, esconder o app na área de notificação.
+                When minimizing, hide the app in the system tray.
               </span>
             </div>
             <input
@@ -927,9 +927,9 @@ export function App() {
 
           <label className="settings-toggle" htmlFor="close-to-tray">
             <div className="settings-toggle-copy">
-              <span className="settings-toggle-title">Fechar para a bandeja</span>
+              <span className="settings-toggle-title">Close to tray</span>
               <span className="settings-toggle-description">
-                Ao fechar, manter o app rodando em segundo plano na bandeja.
+                When closing, keep the app running in the system tray.
               </span>
             </div>
             <input
@@ -966,20 +966,20 @@ export function App() {
                 setSettingsSection("discord");
                 setIsSettingsOpen(true);
               }}
-              aria-label="Abrir configurações"
-              title="Abrir configurações"
+              aria-label="Open settings"
+              title="Open settings"
             >
               <span className="window-glyph icon-glyph">
                 <SettingsIcon />
               </span>
             </button>
-            <button type="button" className="window-button" onClick={() => void handleMinimize()} aria-label="Minimizar">
+            <button type="button" className="window-button" onClick={() => void handleMinimize()} aria-label="Minimize">
               <span className="window-glyph minimize" />
             </button>
-            <button type="button" className="window-button" onClick={() => void handleToggleMaximize()} aria-label="Maximizar ou restaurar">
+            <button type="button" className="window-button" onClick={() => void handleToggleMaximize()} aria-label="Maximize or restore">
               <span className="window-glyph maximize" />
             </button>
-            <button type="button" className="window-button close-button" onClick={() => void handleClose()} aria-label="Fechar">
+            <button type="button" className="window-button close-button" onClick={() => void handleClose()} aria-label="Close">
               <span className="window-glyph close" />
             </button>
           </div>
@@ -992,8 +992,8 @@ export function App() {
                 type="button"
                 className="sidebar-toggle-button"
                 onClick={() => setIsSidebarCollapsed((current) => !current)}
-                aria-label={isSidebarCollapsed ? "Expandir barra lateral" : "Reduzir barra lateral"}
-                title={isSidebarCollapsed ? "Expandir barra lateral" : "Reduzir barra lateral"}
+                aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               >
                 {isSidebarCollapsed ? <ChevronRightDoubleIcon /> : <ChevronLeftDoubleIcon />}
               </button>
@@ -1089,7 +1089,7 @@ export function App() {
                   type="button"
                   className={`sidebar-item add-album-item ${albums.length === 0 ? "empty-slot" : ""}`}
                   onClick={openCreateAlbumModal}
-                  title="Criar álbum"
+                  title="Create album"
                 >
                   <span className="sidebar-item-icon"><PlusIcon /></span>
                 </button>
@@ -1162,16 +1162,16 @@ export function App() {
                   className="empty-state"
                   onClick={() => document.getElementById("discasa-upload-input")?.click()}
                 >
-                  <strong>Nenhum arquivo ainda.</strong>
-                  <span>Arraste arquivos do Explorer para esta área ou clique para enviar.</span>
+                  <strong>No files yet.</strong>
+                  <span>Drag files from Explorer into this area or click to upload.</span>
                 </button>
               ) : null}
             </div>
 
             {isDraggingFiles ? (
               <div className="drop-overlay">
-                <strong>Solte os arquivos aqui</strong>
-                <span>Eles serão adicionados à visualização atual.</span>
+                <strong>Drop files here</strong>
+                <span>They will be added to the current view.</span>
               </div>
             ) : null}
           </main>
@@ -1179,22 +1179,22 @@ export function App() {
       </div>
 
       {isCreateAlbumOpen ? (
-        <div className="album-modal-root" role="dialog" aria-modal="true" aria-label="Criar novo álbum">
-          <button type="button" className="album-modal-backdrop" aria-label="Cancelar criação do álbum" onClick={closeCreateAlbumModal} />
+        <div className="album-modal-root" role="dialog" aria-modal="true" aria-label="Create new album">
+          <button type="button" className="album-modal-backdrop" aria-label="Cancel album creation" onClick={closeCreateAlbumModal} />
           <div className="album-modal">
-            <button type="button" className="album-modal-close" onClick={closeCreateAlbumModal} aria-label="Fechar criação do álbum">
+            <button type="button" className="album-modal-close" onClick={closeCreateAlbumModal} aria-label="Close album creation">
               <span className="album-modal-close-glyph">×</span>
             </button>
 
             <form className="album-modal-content" onSubmit={(event) => void handleCreateAlbumSubmit(event)}>
               <div className="album-modal-header">
-                <h2>Novo álbum</h2>
-                <p>Escolha um nome para a nova pasta da seção Albums.</p>
+                <h2>New album</h2>
+                <p>Choose a name for the new folder in the Albums section.</p>
               </div>
 
               <div className="album-modal-field">
                 <label className="album-modal-label" htmlFor="new-album-name">
-                  Nome do álbum
+                  Album name
                 </label>
                 <input
                   ref={createAlbumInputRef}
@@ -1208,7 +1208,7 @@ export function App() {
                       setCreateAlbumError("");
                     }
                   }}
-                  placeholder="Digite o nome do álbum"
+                  placeholder="Enter the album name"
                   autoComplete="off"
                   spellCheck={false}
                   disabled={isCreatingAlbum}
@@ -1218,7 +1218,7 @@ export function App() {
 
               <div className="album-modal-actions">
                 <button type="submit" className="album-modal-confirm" disabled={isCreatingAlbum}>
-                  {isCreatingAlbum ? "Criando..." : "OK"}
+                  {isCreatingAlbum ? "Creating..." : "OK"}
                 </button>
               </div>
             </form>
@@ -1227,8 +1227,8 @@ export function App() {
       ) : null}
 
       {isSettingsOpen ? (
-        <div className="settings-modal-root" role="dialog" aria-modal="true" aria-label="Configurações do Discasa">
-          <button type="button" className="settings-modal-backdrop" aria-label="Fechar configurações" onClick={closeSettingsModal} />
+        <div className="settings-modal-root" role="dialog" aria-modal="true" aria-label="Discasa settings">
+          <button type="button" className="settings-modal-backdrop" aria-label="Close settings" onClick={closeSettingsModal} />
           <div className="settings-modal">
             <aside className="settings-modal-sidebar">
               <div className="settings-modal-profile">
@@ -1240,7 +1240,7 @@ export function App() {
               </div>
 
               <div className="settings-modal-nav-group">
-                <span className="settings-modal-nav-label">Configurações</span>
+                <span className="settings-modal-nav-label">Settings</span>
                 <button type="button" className={`settings-modal-nav-item ${settingsSection === "discord" ? "active" : ""}`} onClick={() => setSettingsSection("discord")}>
                   Discord
                 </button>
@@ -1254,7 +1254,7 @@ export function App() {
             </aside>
 
             <section className="settings-modal-content">
-              <button type="button" className="settings-modal-close" onClick={closeSettingsModal} aria-label="Fechar configurações">
+              <button type="button" className="settings-modal-close" onClick={closeSettingsModal} aria-label="Close settings">
                 <span className="settings-modal-close-glyph">×</span>
               </button>
               {renderSettingsModalContent()}
@@ -1274,7 +1274,7 @@ export function App() {
             className="context-menu-item"
             onClick={() => void handleRenameAlbum(albumContextMenu.albumId, albumContextMenu.albumName)}
           >
-            Renomear
+            Rename
           </button>
           <div className="context-menu-separator" />
           <button
@@ -1283,7 +1283,7 @@ export function App() {
             onClick={() => void handleMoveAlbum(albumContextMenu.albumId, "up")}
             disabled={!canMoveAlbum(albumContextMenu.albumId, "up")}
           >
-            Mover para cima
+            Move up
           </button>
           <button
             type="button"
@@ -1291,7 +1291,7 @@ export function App() {
             onClick={() => void handleMoveAlbum(albumContextMenu.albumId, "down")}
             disabled={!canMoveAlbum(albumContextMenu.albumId, "down")}
           >
-            Mover para baixo
+            Move down
           </button>
           <div className="context-menu-separator" />
           <button
@@ -1299,7 +1299,7 @@ export function App() {
             className="context-menu-item danger"
             onClick={() => void handleDeleteAlbum(albumContextMenu.albumId, albumContextMenu.albumName)}
           >
-            Excluir álbum
+            Delete album
           </button>
         </div>
       ) : null}

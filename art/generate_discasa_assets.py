@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,17 +12,56 @@ except ImportError:
     print("Pillow is required to run this script.")
     print("Install it with:")
     print("  pip install pillow")
+    if os.name == "nt":
+        input("Press Enter to close this window...")
     sys.exit(1)
 
+if os.name == "nt":
+    import msvcrt
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+def wait_before_exit(exit_code: int = 0) -> None:
+    if os.name == "nt":
+        print("")
+        input("Press Enter to close this window...")
+    sys.exit(exit_code)
+
+
+def resolve_project_root() -> Path:
+    script_dir = Path(__file__).resolve().parent
+
+    if script_dir.name.lower() == "art":
+        return script_dir.parent
+
+    if (script_dir / "package.json").exists():
+        return script_dir
+
+    if (script_dir.parent / "package.json").exists():
+        return script_dir.parent
+
+    return script_dir.parent
+
+
+PROJECT_ROOT = resolve_project_root()
 ART_DIR = PROJECT_ROOT / "art"
 SOURCE_IMAGE = ART_DIR / "Discasa-icon.png"
 
 ASSETS_DIR = PROJECT_ROOT / "apps" / "desktop" / "src" / "assets"
 TAURI_ICONS_DIR = PROJECT_ROOT / "apps" / "desktop" / "src-tauri" / "icons"
-TAURI_TARGET_DIR = PROJECT_ROOT / "apps" / "desktop" / "src-tauri" / "target"
 
+SOFT_RESET_DIRS = [
+    PROJECT_ROOT / "node_modules",
+    PROJECT_ROOT / "apps" / "desktop" / "node_modules",
+    PROJECT_ROOT / "apps" / "desktop" / "dist",
+    PROJECT_ROOT / "apps" / "desktop" / "src-tauri" / "target",
+    PROJECT_ROOT / "apps" / "server" / "dist",
+    PROJECT_ROOT / "apps" / "server" / "node_modules",
+    PROJECT_ROOT / "target",
+]
+
+SOFT_RESET_FILES = [
+    PROJECT_ROOT / "package-lock.json",
+]
 
 PNG_OUTPUTS = {
     "32x32.png": 32,
@@ -43,10 +84,38 @@ PNG_OUTPUTS = {
 ICO_SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
 
 
+def prompt_yes_no(message: str) -> bool:
+    prompt = f"{message} [Y,N]?"
+
+    if os.name == "nt":
+        print(prompt, end="", flush=True)
+        while True:
+            key = msvcrt.getwch()
+            if not key:
+                continue
+
+            lowered = key.lower()
+            if lowered == "y":
+                print("Y")
+                return True
+            if lowered == "n":
+                print("N")
+                return False
+
+    while True:
+        answer = input(prompt).strip().lower()
+        if answer in {"y", "yes"}:
+            return True
+        if answer in {"n", "no"}:
+            return False
+
+
 def require_source() -> None:
-    if not SOURCE_IMAGE.exists():
-        print(f"Source image not found: {SOURCE_IMAGE}")
-        sys.exit(1)
+    if SOURCE_IMAGE.exists():
+        return
+
+    print(f"Source image not found: {SOURCE_IMAGE}")
+    wait_before_exit(1)
 
 
 def ensure_directories() -> None:
@@ -95,38 +164,153 @@ def generate_frontend_asset() -> None:
     print(f"Created: {output_path}")
 
 
-def clear_tauri_target() -> None:
-    if not TAURI_TARGET_DIR.exists():
-        print(f"Skipped target cleanup: {TAURI_TARGET_DIR} does not exist.")
-        return
+def remove_dir(path: Path) -> None:
+    if path.exists():
+        print(f"Removing folder: {path}")
+        shutil.rmtree(path, ignore_errors=False)
+    else:
+        print(f"Folder not found, skipping: {path}")
+
+
+def remove_file(path: Path) -> None:
+    if path.exists():
+        print(f"Removing file: {path}")
+        path.unlink()
+    else:
+        print(f"File not found, skipping: {path}")
+
+
+def run_soft_reset() -> None:
+    print("")
+    print("Running soft reset...")
+    print("")
+
+    for directory in SOFT_RESET_DIRS:
+        try:
+            remove_dir(directory)
+        except PermissionError:
+            print(f"Could not remove folder: {directory}")
+            print("Close Discasa and any running terminal using this project, then run the script again.")
+            wait_before_exit(1)
+
+    for file_path in SOFT_RESET_FILES:
+        try:
+            remove_file(file_path)
+        except PermissionError:
+            print(f"Could not remove file: {file_path}")
+            print("Close any tool that may still be using this project, then run the script again.")
+            wait_before_exit(1)
+
+    print("")
+    print("Soft reset complete.")
+
+
+def run_npm_install() -> None:
+    print("")
+    print("Running npm install...")
+    print("")
 
     try:
-        shutil.rmtree(TAURI_TARGET_DIR)
-        print(f"Deleted: {TAURI_TARGET_DIR}")
-    except PermissionError:
+        if os.name == "nt":
+            result = subprocess.run(
+                ["cmd", "/c", "npm", "install"],
+                cwd=PROJECT_ROOT,
+                check=False,
+            )
+        else:
+            result = subprocess.run(
+                ["npm", "install"],
+                cwd=PROJECT_ROOT,
+                check=False,
+            )
+    except FileNotFoundError:
+        print("npm was not found in PATH.")
+        wait_before_exit(1)
+
+    if result.returncode != 0:
         print("")
-        print("Could not delete the Tauri target folder.")
-        print("Close Discasa and any running Tauri terminal first, then run the script again.")
-        sys.exit(1)
+        print(f"npm install failed with exit code {result.returncode}.")
+        wait_before_exit(result.returncode)
+
+    print("")
+    print("npm install finished successfully.")
+
+
+def start_app() -> None:
+    print("")
+    print("Starting Discasa...")
+
+    if os.name == "nt":
+        subprocess.Popen(
+            'start "Discasa Server" cmd /k "cd /d ""{}"" && npm run dev:server"'.format(PROJECT_ROOT),
+            cwd=PROJECT_ROOT,
+            shell=True,
+        )
+        subprocess.Popen(
+            'start "Discasa Desktop" cmd /k "cd /d ""{}"" && npm --workspace @discasa/desktop exec tauri dev"'.format(PROJECT_ROOT),
+            cwd=PROJECT_ROOT,
+            shell=True,
+        )
+        return
+
+    subprocess.Popen(["npm", "run", "dev:server"], cwd=PROJECT_ROOT)
+    subprocess.Popen(["npm", "--workspace", "@discasa/desktop", "exec", "tauri", "dev"], cwd=PROJECT_ROOT)
 
 
 def main() -> None:
     require_source()
     ensure_directories()
 
+    print("==========================================")
+    print("Discasa - Generate Assets")
+    print("==========================================")
+    print("")
+    print(f"Project root: {PROJECT_ROOT}")
+    print(f"Source image: {SOURCE_IMAGE}")
+    print("")
+    print("This will:")
+    print("- Generate frontend and Tauri icon assets")
+    print("- Run a complete soft reset")
+    print("- Optionally run npm install")
+    print("- Optionally start the app")
+    print("")
+
+    if not prompt_yes_no("Continue"):
+        print("Cancelled.")
+        return
+
     source = load_source()
+
+    print("")
+    print("Generating assets...")
+    print("")
 
     generate_frontend_asset()
     generate_pngs(source)
     generate_ico(source)
-    clear_tauri_target()
+
+    print("")
+    print("Asset generation complete.")
+    print("")
+
+    run_soft_reset()
+
+    print("")
+    if prompt_yes_no("Run npm install now"):
+        run_npm_install()
+
+    print("")
+    if prompt_yes_no("Start the app now"):
+        start_app()
 
     print("")
     print("Done.")
-    print(f"Source: {SOURCE_IMAGE}")
-    print(f"Assets: {ASSETS_DIR}")
-    print(f"Tauri icons: {TAURI_ICONS_DIR}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("")
+        print("Cancelled by user.")
+        wait_before_exit(1)
