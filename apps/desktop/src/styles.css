@@ -448,7 +448,7 @@ img {
   line-height: 1.08;
 }
 
-.profile-copy strong {
+.profile-copy .profile-primary {
   font-size: 13px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.94);
@@ -457,7 +457,7 @@ img {
   text-overflow: ellipsis;
 }
 
-.profile-copy span {
+.profile-copy .profile-secondary {
   margin-top: 4px;
   font-size: 11px;
   font-weight: 600;
@@ -584,7 +584,7 @@ img {
   border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.file-meta strong {
+.file-meta .file-name {
   display: block;
   font-size: 13px;
   font-weight: 600;
@@ -648,16 +648,16 @@ img {
   cursor: pointer;
 }
 
-.empty-state strong,
-.drop-overlay strong {
+.empty-state-title,
+.drop-overlay-title {
   display: block;
   margin-bottom: 10px;
   font-size: 16px;
   font-weight: 600;
 }
 
-.empty-state span,
-.drop-overlay span,
+.empty-state-copy,
+.drop-overlay-copy,
 .settings-card,
 .settings-label,
 .status-toast {
@@ -807,13 +807,13 @@ img {
   gap: 4px;
 }
 
-.settings-modal-profile-copy strong {
+.settings-profile-primary {
   font-size: 13px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.96);
 }
 
-.settings-modal-profile-copy span {
+.settings-profile-secondary {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.6);
 }
@@ -1135,6 +1135,47 @@ img {
   }
 }
 
+.ui-avatar {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--accent-color);
+}
+
+.ui-avatar.has-discord-avatar {
+  background: transparent;
+}
+
+.ui-avatar-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.ui-avatar-fallback {
+  position: absolute;
+  inset: 0;
+}
+
+.ui-avatar-fallback-background {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent-color);
+}
+
+.ui-avatar-fallback-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
+  pointer-events: none;
+}
 
 .album-modal-root {
   position: fixed;
@@ -1144,23 +1185,33 @@ img {
   place-items: center;
 }
 
-.album-modal-backdrop {
+.album-modal-root::before {
+  content: "";
   position: absolute;
   inset: 0;
   background: rgba(4, 7, 12, 0.72);
   backdrop-filter: blur(4px);
-  cursor: default;
+  pointer-events: auto;
+}
+
+.album-modal-backdrop {
+  display: none;
 }
 
 .album-modal {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: min(520px, calc(100vw - 40px));
-  min-height: 260px;
+  min-height: 0;
   border-radius: 26px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(180deg, rgba(27, 31, 39, 0.98) 0%, rgba(18, 22, 30, 0.98) 100%);
   box-shadow: 0 28px 60px rgba(0, 0, 0, 0.4);
+}
+
+.album-modal,
+.album-modal * {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .album-modal-close {
@@ -1186,63 +1237,76 @@ img {
 .album-modal-close-glyph {
   position: relative;
   top: -1px;
-  font-size: 20px;
+  font-size: 14px;
   line-height: 1;
 }
 
 .album-modal-content {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 28px 28px 24px 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "header header"
+    "field actions";
+  column-gap: 12px;
+  row-gap: 12px;
+  padding: 24px 28px 20px 28px;
+}
+
+.album-modal-header {
+  grid-area: header;
+  margin: 0;
 }
 
 .album-modal-header h2 {
   margin: 0;
-  font-size: 28px;
+  font-size: 12px;
   font-weight: 700;
+  line-height: 1.4;
   color: rgba(255, 255, 255, 0.96);
 }
 
 .album-modal-header p {
-  margin: 8px 0 0 0;
-  font-size: 14px;
-  line-height: 1.5;
+  margin: 6px 0 0 0;
+  font-size: 12px;
+  line-height: 1.4;
   color: rgba(255, 255, 255, 0.56);
 }
 
 .album-modal-field {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  grid-area: field;
+  gap: 8px;
+  margin: 0;
 }
 
 .album-modal-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  display: none;
 }
 
 .album-modal-input {
   width: 100%;
-  height: 48px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  height: 44px;
+  padding: 0 16px;
   border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.96);
-  padding: 0 16px;
   outline: none;
+  font-size: 12px;
+  line-height: 1.4;
   transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
 
 .album-modal-input::placeholder {
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.34);
 }
 
 .album-modal-input:focus {
-  border-color: var(--accent-color);
-  box-shadow: 0 0 0 1px var(--accent-color);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .album-modal-input:disabled {
@@ -1252,24 +1316,29 @@ img {
 
 .album-modal-error {
   font-size: 12px;
+  line-height: 1.4;
   color: #ff9ea8;
 }
 
 .album-modal-actions {
+  grid-area: actions;
   display: flex;
-  justify-content: flex-end;
-  margin-top: 8px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  margin: 0;
+  padding: 0;
 }
 
 .album-modal-confirm {
   min-width: 96px;
-  height: 42px;
+  height: 44px;
   padding: 0 18px;
   border-radius: 999px;
   background: var(--accent-color);
   color: #ffffff;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
+  line-height: 1;
   cursor: pointer;
   transition: filter 0.16s ease, opacity 0.16s ease;
 }

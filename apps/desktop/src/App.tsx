@@ -17,6 +17,7 @@ import {
   uploadFiles,
 } from "./lib/api";
 import logoUrl from "./assets/discasa-logo.png";
+import defaultAvatarUrl from "./assets/discasa-default-avatar.png";
 
 type SettingsSection = "discord" | "appearance" | "window";
 type WindowState = "default" | "maximized";
@@ -222,6 +223,29 @@ function UploadIcon() {
   );
 }
 
+function ProfileAvatar({ avatarUrl, className }: { avatarUrl: string | null; className: string }) {
+  const [hasImageError, setHasImageError] = useState(false);
+
+  useEffect(() => {
+    setHasImageError(false);
+  }, [avatarUrl]);
+
+  const showDiscordAvatar = Boolean(avatarUrl) && !hasImageError;
+
+  return (
+    <div className={`${className} ui-avatar ${showDiscordAvatar ? "has-discord-avatar" : "has-default-avatar"}`} aria-hidden="true">
+      {showDiscordAvatar ? (
+        <img src={avatarUrl ?? undefined} alt="" className="ui-avatar-image" onError={() => setHasImageError(true)} />
+      ) : (
+        <div className="ui-avatar-fallback">
+          <span className="ui-avatar-fallback-background" />
+          <img src={defaultAvatarUrl} alt="" className="ui-avatar-fallback-image" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCreateAlbumOpen, setIsCreateAlbumOpen] = useState(false);
@@ -230,6 +254,7 @@ export function App() {
   const [createAlbumError, setCreateAlbumError] = useState("");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("discord");
   const [sessionName, setSessionName] = useState<string | null>(null);
+  const [sessionAvatarUrl, setSessionAvatarUrl] = useState<string | null>(null);
   const [albums, setAlbums] = useState<AlbumRecord[]>([]);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [selectedView, setSelectedView] = useState<SidebarView>({ kind: "library", id: "all-files" });
@@ -390,6 +415,7 @@ export function App() {
       ]);
 
       setSessionName(session.user?.username ?? null);
+      setSessionAvatarUrl(session.user?.avatarUrl ?? null);
       setAlbums(nextAlbums);
       setItems(nextItems);
     } catch (caughtError) {
@@ -403,8 +429,9 @@ export function App() {
     () => ({
       nickname: sessionName ?? DEFAULT_PROFILE.nickname,
       server: DEFAULT_PROFILE.server,
+      avatarUrl: sessionAvatarUrl,
     }),
-    [sessionName],
+    [sessionAvatarUrl, sessionName],
   );
 
   const visibleItems = useMemo(() => {
@@ -1097,11 +1124,11 @@ export function App() {
             </div>
 
             <footer className="sidebar-profile">
-              <div className="profile-avatar" aria-hidden="true" />
+              <ProfileAvatar avatarUrl={profile.avatarUrl} className="profile-avatar" />
               {!isSidebarCollapsed ? (
                 <div className="profile-copy">
-                  <span className="profile-primary">{profile.nickname}</span>
-                  <span className="profile-secondary">{profile.server}</span>
+                  <strong>{profile.nickname}</strong>
+                  <span>{profile.server}</span>
                 </div>
               ) : null}
             </footer>
@@ -1149,7 +1176,7 @@ export function App() {
                     </span>
                   </div>
                   <div className="file-meta">
-                    <span className="file-name">{item.name}</span>
+                    <strong>{item.name}</strong>
                     <small>{new Intl.NumberFormat("en-US").format(item.size)} bytes</small>
                     {renderCardActions(item)}
                   </div>
@@ -1162,16 +1189,16 @@ export function App() {
                   className="empty-state"
                   onClick={() => document.getElementById("discasa-upload-input")?.click()}
                 >
-                  <span className="empty-state-title">No files yet.</span>
-                  <span className="empty-state-copy">Drag files from Explorer into this area or click to upload.</span>
+                  <strong>No files yet.</strong>
+                  <span>Drag files from Explorer into this area or click to upload.</span>
                 </button>
               ) : null}
             </div>
 
             {isDraggingFiles ? (
               <div className="drop-overlay">
-                <span className="drop-overlay-title">Drop files here</span>
-                <span className="drop-overlay-copy">They will be added to the current view.</span>
+                <strong>Drop files here</strong>
+                <span>They will be added to the current view.</span>
               </div>
             ) : null}
           </main>
@@ -1232,10 +1259,10 @@ export function App() {
           <div className="settings-modal">
             <aside className="settings-modal-sidebar">
               <div className="settings-modal-profile">
-                <div className="settings-modal-avatar" aria-hidden="true" />
+                <ProfileAvatar avatarUrl={profile.avatarUrl} className="settings-modal-avatar" />
                 <div className="settings-modal-profile-copy">
-                  <span className="settings-profile-primary">{profile.nickname}</span>
-                  <span className="settings-profile-secondary">{profile.server}</span>
+                  <strong>{profile.nickname}</strong>
+                  <span>{profile.server}</span>
                 </div>
               </div>
 
