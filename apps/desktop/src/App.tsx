@@ -871,7 +871,6 @@ export function App() {
           </div>
 
           <div className="settings-card">
-            <div className="settings-label">Discord</div>
             <div className={`settings-status ${sessionName ? "connected" : "disconnected"}`}>
               {sessionName ? "Connected" : "Not connected"}
             </div>
@@ -894,7 +893,6 @@ export function App() {
           </div>
 
           <div className="settings-card">
-            <div className="settings-label">Appearance</div>
             <div className="settings-field-stack">
               <label className="settings-input-label" htmlFor="accent-hex">
                 Accent color (HEX)
@@ -933,7 +931,6 @@ export function App() {
         </div>
 
         <div className="settings-card">
-          <div className="settings-label">Window</div>
 
           <label className="settings-toggle" htmlFor="minimize-to-tray">
             <div className="settings-toggle-copy">

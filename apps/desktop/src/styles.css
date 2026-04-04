@@ -467,8 +467,8 @@ img {
   line-height: 1.08;
 }
 
-.profile-copy strong,
-.settings-modal-profile-copy strong {
+.profile-primary,
+.settings-profile-primary {
   font-size: 12px;
   font-weight: 400;
   color: var(--text-primary);
@@ -477,8 +477,8 @@ img {
   text-overflow: ellipsis;
 }
 
-.profile-copy span,
-.settings-modal-profile-copy span {
+.profile-secondary,
+.settings-profile-secondary {
   margin-top: 4px;
   font-size: 12px;
   font-weight: 400;
@@ -605,7 +605,7 @@ img {
   border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.file-meta strong {
+.file-name {
   display: block;
   font-size: 12px;
   font-weight: 400;
@@ -615,7 +615,7 @@ img {
   text-overflow: ellipsis;
 }
 
-.file-meta small {
+.file-size {
   display: block;
   margin-top: 7px;
   font-size: 12px;
@@ -671,8 +671,8 @@ img {
   cursor: pointer;
 }
 
-.empty-state strong,
-.drop-overlay strong {
+.empty-state-title,
+.drop-overlay-title {
   display: block;
   margin-bottom: 10px;
   font-size: 12px;
@@ -680,15 +680,14 @@ img {
   color: var(--text-primary);
 }
 
-.empty-state span,
-.drop-overlay span {
+.empty-state-copy,
+.drop-overlay-copy {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 400;
 }
 
 .settings-card,
-.settings-label,
 .status-toast {
   color: var(--text-muted);
 }
@@ -919,11 +918,6 @@ img {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.settings-label {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-}
 
 .settings-status {
   font-size: 12px;
