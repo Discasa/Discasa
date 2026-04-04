@@ -305,11 +305,12 @@ img {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 2px 12px 8px 12px;
 }
 
 .sidebar-panel.collapsed .sidebar-scroll {
-  padding: 2px 5px 8px 5px;
+  padding: 2px 4px 8px 4px;
 }
 
 .sidebar-section + .sidebar-section {
@@ -1084,7 +1085,7 @@ img {
 .sidebar-scroll::-webkit-scrollbar,
 .files-grid::-webkit-scrollbar,
 .settings-modal-content::-webkit-scrollbar {
-  width: 10px;
+  width: 5px;
 }
 
 .sidebar-scroll::-webkit-scrollbar-track,
@@ -1097,7 +1098,20 @@ img {
 .files-grid::-webkit-scrollbar-thumb,
 .settings-modal-content::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-panel.collapsed .sidebar-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+
+.sidebar-panel.collapsed .sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-panel.collapsed .sidebar-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 @media (max-width: 980px) {

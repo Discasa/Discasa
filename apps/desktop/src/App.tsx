@@ -122,12 +122,12 @@ function LibraryIcon() {
   );
 }
 
-function HeartIcon({ filled = false }: { filled?: boolean }) {
+function HeartIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
         d="M12 20.55 10.55 19.22C5.4 14.54 2 11.46 2 7.7 2 4.76 4.3 2.5 7.2 2.5c1.64 0 3.22.76 4.25 1.96 1.03-1.2 2.61-1.96 4.25-1.96 2.9 0 5.2 2.26 5.2 5.2 0 3.76-3.4 6.84-8.55 11.52L12 20.55Z"
-        fill={filled ? "currentColor" : "none"}
+        fill="none"
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinecap="round"
@@ -167,12 +167,12 @@ function VideoIcon() {
   );
 }
 
-function FolderIcon({ filled = false }: { filled?: boolean }) {
+function FolderIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
         d="M4.75 7.25A1.75 1.75 0 0 1 6.5 5.5h4.1c.44 0 .85.18 1.16.48l1.06 1.03c.18.18.43.29.69.29h4a1.75 1.75 0 0 1 1.75 1.75v6.45a1.75 1.75 0 0 1-1.75 1.75h-11A1.75 1.75 0 0 1 4.75 15.5v-8.25Z"
-        fill={filled ? "currentColor" : "none"}
+        fill="none"
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinejoin="round"
@@ -1127,8 +1127,8 @@ export function App() {
               <ProfileAvatar avatarUrl={profile.avatarUrl} className="profile-avatar" />
               {!isSidebarCollapsed ? (
                 <div className="profile-copy">
-                  <strong>{profile.nickname}</strong>
-                  <span>{profile.server}</span>
+                  <span className="profile-primary">{profile.nickname}</span>
+                  <span className="profile-secondary">{profile.server}</span>
                 </div>
               ) : null}
             </footer>
@@ -1176,8 +1176,8 @@ export function App() {
                     </span>
                   </div>
                   <div className="file-meta">
-                    <strong>{item.name}</strong>
-                    <small>{new Intl.NumberFormat("en-US").format(item.size)} bytes</small>
+                    <span className="file-name">{item.name}</span>
+                    <small className="file-size">{new Intl.NumberFormat("en-US").format(item.size)} bytes</small>
                     {renderCardActions(item)}
                   </div>
                 </article>
@@ -1189,16 +1189,16 @@ export function App() {
                   className="empty-state"
                   onClick={() => document.getElementById("discasa-upload-input")?.click()}
                 >
-                  <strong>No files yet.</strong>
-                  <span>Drag files from Explorer into this area or click to upload.</span>
+                  <span className="empty-state-title">No files yet.</span>
+                  <span className="empty-state-copy">Drag files from Explorer into this area or click to upload.</span>
                 </button>
               ) : null}
             </div>
 
             {isDraggingFiles ? (
               <div className="drop-overlay">
-                <strong>Drop files here</strong>
-                <span>They will be added to the current view.</span>
+                <span className="drop-overlay-title">Drop files here</span>
+                <span className="drop-overlay-copy">They will be added to the current view.</span>
               </div>
             ) : null}
           </main>
@@ -1207,7 +1207,6 @@ export function App() {
 
       {isCreateAlbumOpen ? (
         <div className="album-modal-root" role="dialog" aria-modal="true" aria-label="Create new album">
-          <button type="button" className="album-modal-backdrop" aria-label="Cancel album creation" onClick={closeCreateAlbumModal} />
           <div className="album-modal">
             <button type="button" className="album-modal-close" onClick={closeCreateAlbumModal} aria-label="Close album creation">
               <span className="album-modal-close-glyph">×</span>
@@ -1255,14 +1254,13 @@ export function App() {
 
       {isSettingsOpen ? (
         <div className="settings-modal-root" role="dialog" aria-modal="true" aria-label="Discasa settings">
-          <button type="button" className="settings-modal-backdrop" aria-label="Close settings" onClick={closeSettingsModal} />
           <div className="settings-modal">
             <aside className="settings-modal-sidebar">
               <div className="settings-modal-profile">
                 <ProfileAvatar avatarUrl={profile.avatarUrl} className="settings-modal-avatar" />
                 <div className="settings-modal-profile-copy">
-                  <strong>{profile.nickname}</strong>
-                  <span>{profile.server}</span>
+                  <span className="settings-profile-primary">{profile.nickname}</span>
+                  <span className="settings-profile-secondary">{profile.server}</span>
                 </div>
               </div>
 
