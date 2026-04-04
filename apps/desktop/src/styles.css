@@ -249,11 +249,30 @@ strong {
   background: var(--accent-color-hover);
 }
 
+.secondary-button {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.secondary-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.danger-button {
+  background: rgba(123, 34, 41, 0.22);
+  color: var(--danger-fg-strong);
+}
+
+.danger-button:hover {
+  background: rgba(123, 34, 41, 0.34);
+  color: #ffffff;
+}
+
 .form-text-input {
   width: 100%;
   min-height: 42px;
-  padding-inline: 16px;
-  border-radius: var(--radius-md);
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
   background: var(--surface-control-soft);
   border: 1px solid var(--border-soft);
   color: var(--text-primary);
@@ -268,11 +287,6 @@ strong {
   border-color: rgba(var(--accent-rgb), 0.78);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.16);
   background: rgba(255, 255, 255, 0.075);
-}
-
-.form-text-input:disabled {
-  opacity: 0.72;
-  cursor: default;
 }
 
 .modal-close-button {
@@ -1176,6 +1190,68 @@ strong {
 
 .album-modal-label {
   display: none;
+}
+
+.album-modal-input {
+  min-height: 44px;
+  padding-inline: 16px;
+  border-radius: var(--radius-md);
+}
+
+.album-modal-input:focus {
+  border-color: var(--border-soft);
+  box-shadow: none;
+  background: var(--surface-control-soft);
+}
+
+.album-modal-input:disabled {
+  opacity: 0.72;
+  cursor: default;
+}
+
+.delete-album-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 28px 20px;
+}
+
+.delete-album-modal-header p {
+  margin-top: 6px;
+}
+
+.delete-album-modal-copy {
+  margin: 0;
+  font-size: var(--ui-font-size);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.delete-album-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.delete-album-modal-cancel,
+.delete-album-modal-confirm {
+  min-width: 104px;
+  min-height: 44px;
+  padding-inline: 18px;
+}
+
+.delete-album-modal-cancel:disabled,
+.delete-album-modal-confirm:disabled,
+.album-modal-close:disabled {
+  opacity: 0.72;
+  cursor: default;
+}
+
+.delete-album-modal-confirm:disabled:hover,
+.delete-album-modal-cancel:disabled:hover {
+  filter: none;
+  transform: none;
 }
 
 .album-modal-error {

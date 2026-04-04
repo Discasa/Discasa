@@ -19,6 +19,7 @@ import {
 import logoUrl from "./assets/discasa-logo.png";
 import { AlbumContextMenu } from "./components/AlbumContextMenu";
 import { AlbumModal } from "./components/AlbumModal";
+import { DeleteAlbumModal } from "./components/DeleteAlbumModal";
 import { LibraryPanel } from "./components/LibraryPanel";
 import { SettingsModal } from "./components/SettingsModal";
 import { Sidebar } from "./components/Sidebar";
@@ -110,6 +111,9 @@ export function App() {
   const [accentColor, setAccentColor] = useState<string>(() => readStoredString(ACCENT_COLOR_KEY, DEFAULT_ACCENT_HEX));
   const [accentInput, setAccentInput] = useState<string>(() => readStoredString(ACCENT_COLOR_KEY, DEFAULT_ACCENT_HEX));
   const [accentInputError, setAccentInputError] = useState("");
+  const [deleteAlbumTarget, setDeleteAlbumTarget] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingAlbum, setIsDeletingAlbum] = useState(false);
+  const [deleteAlbumError, setDeleteAlbumError] = useState("");
 
   const dragDepthRef = useRef(0);
   const closeToTrayRef = useRef(closeToTray);
@@ -197,10 +201,17 @@ export function App() {
   }, [isCreateAlbumOpen]);
 
   useEffect(() => {
-    if (!isSettingsOpen && !isCreateAlbumOpen) return;
+    if (!isSettingsOpen && !isCreateAlbumOpen && !deleteAlbumTarget) return;
 
     const handleEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
+
+      if (deleteAlbumTarget) {
+        if (!isDeletingAlbum) {
+          closeDeleteAlbumModal();
+        }
+        return;
+      }
 
       if (isCreateAlbumOpen) {
         closeCreateAlbumModal();
@@ -217,7 +228,7 @@ export function App() {
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [isSettingsOpen, isCreateAlbumOpen]);
+  }, [isSettingsOpen, isCreateAlbumOpen, deleteAlbumTarget, isDeletingAlbum]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -326,6 +337,18 @@ export function App() {
     uploadInputRef.current?.click();
   }
 
+  function openDeleteAlbumModal(albumId: string, albumName: string): void {
+    setAlbumContextMenu(null);
+    setDeleteAlbumError("");
+    setDeleteAlbumTarget({ id: albumId, name: albumName });
+  }
+
+  function closeDeleteAlbumModal(): void {
+    if (isDeletingAlbum) return;
+    setDeleteAlbumTarget(null);
+    setDeleteAlbumError("");
+  }
+
   async function handleCreateAlbumSubmit(event?: FormEvent<HTMLFormElement>): Promise<void> {
     event?.preventDefault();
 
@@ -397,9 +420,12 @@ export function App() {
     }
   }
 
-  async function handleDeleteAlbum(albumId: string, albumName: string): Promise<void> {
-    const confirmed = window.confirm(`Delete the album "${albumName}"?`);
-    if (!confirmed) return;
+  async function handleDeleteAlbumConfirm(): Promise<void> {
+    if (!deleteAlbumTarget) return;
+
+    const { id: albumId, name: albumName } = deleteAlbumTarget;
+    setIsDeletingAlbum(true);
+    setDeleteAlbumError("");
 
     try {
       await deleteAlbum(albumId);
@@ -413,11 +439,16 @@ export function App() {
         })),
       );
       setSelectedView((current) => (current.kind === "album" && current.id === albumId ? { kind: "library", id: "all-files" } : current));
+      setDeleteAlbumTarget(null);
       setAlbumContextMenu(null);
       setMessage(`Album deleted: ${albumName}`);
       setError("");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not delete the album.");
+      const nextError = caughtError instanceof Error ? caughtError.message : "Could not delete the album.";
+      setDeleteAlbumError(nextError);
+      setError(nextError);
+    } finally {
+      setIsDeletingAlbum(false);
     }
   }
 
@@ -688,6 +719,16 @@ export function App() {
         />
       ) : null}
 
+      {deleteAlbumTarget ? (
+        <DeleteAlbumModal
+          albumName={deleteAlbumTarget.name}
+          isDeleting={isDeletingAlbum}
+          error={deleteAlbumError}
+          onClose={closeDeleteAlbumModal}
+          onConfirm={handleDeleteAlbumConfirm}
+        />
+      ) : null}
+
       {isSettingsOpen ? (
         <SettingsModal
           profile={profile}
@@ -719,11 +760,12 @@ export function App() {
         }
         onMoveUp={() => (albumContextMenu ? handleMoveAlbum(albumContextMenu.albumId, "up") : Promise.resolve())}
         onMoveDown={() => (albumContextMenu ? handleMoveAlbum(albumContextMenu.albumId, "down") : Promise.resolve())}
-        onDelete={() =>
-          albumContextMenu
-            ? handleDeleteAlbum(albumContextMenu.albumId, albumContextMenu.albumName)
-            : Promise.resolve()
-        }
+        onDelete={() => {
+          if (albumContextMenu) {
+            openDeleteAlbumModal(albumContextMenu.albumId, albumContextMenu.albumName);
+          }
+          return Promise.resolve();
+        }}
         onPointerDown={(event) => event.stopPropagation()}
       />
 

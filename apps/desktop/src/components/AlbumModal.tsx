@@ -21,7 +21,7 @@ export function AlbumModal({
 }: AlbumModalProps) {
   return (
     <div className="album-modal-root" role="dialog" aria-modal="true" aria-label="Create new album">
-      <div className="album-modal-backdrop" aria-hidden="true" />
+      <button type="button" className="album-modal-backdrop" aria-label="Close album creation" onClick={onClose} />
 
       <div className="album-modal">
         <button type="button" className="icon-circle-button modal-close-button album-modal-close" onClick={onClose} aria-label="Close album creation">
@@ -41,7 +41,7 @@ export function AlbumModal({
             <input
               ref={inputRef}
               id="new-album-name"
-              className="form-text-input"
+              className="form-text-input album-modal-input"
               type="text"
               value={newAlbumName}
               onChange={(event) => onChangeName(event.currentTarget.value)}
