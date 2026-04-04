@@ -82,8 +82,12 @@
   --status-error: #ff8a8a;
   --status-success: #7fe3a0;
 
-  --transition-fast: 0.16s ease;
-  --transition-medium: 0.2s ease;
+  --transition-duration: 0.25s;
+  --transition-ease-in: ease-in;
+  --transition-ease-out: ease-out;
+  --transition-hover-in: var(--transition-duration) var(--transition-ease-in);
+  --transition-hover-out: var(--transition-duration) var(--transition-ease-out);
+  --transition-state: var(--transition-duration) var(--transition-ease-out);
 }
 
 * {
@@ -201,11 +205,12 @@ strong {
 
 .sidebar-scrollbar-host::-webkit-scrollbar-thumb {
   background: transparent;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-hover-out);
 }
 
 .sidebar-panel:hover .sidebar-scrollbar-host::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.05);
+  transition: background var(--transition-hover-in);
 }
 
 .content-scrollbar-host::-webkit-scrollbar-thumb {
@@ -221,12 +226,13 @@ strong {
   background: var(--surface-control-soft);
   color: rgba(255, 255, 255, 0.72);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  transition: background var(--transition-hover-out), color var(--transition-hover-out), transform var(--transition-hover-out);
 }
 
 .icon-circle-button:hover {
   background: var(--surface-control-hover);
   color: #ffffff;
+  transition: background var(--transition-hover-in), color var(--transition-hover-in), transform var(--transition-hover-in);
 }
 
 .pill-button {
@@ -237,12 +243,16 @@ strong {
   padding: 0 12px;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), filter var(--transition-fast), opacity var(--transition-fast);
+  transition: background var(--transition-hover-out), color var(--transition-hover-out), filter var(--transition-hover-out), opacity var(--transition-hover-out);
 }
 
 .accent-button {
   background: var(--accent-color);
   color: #ffffff;
+}
+
+.pill-button:hover {
+  transition: background var(--transition-hover-in), color var(--transition-hover-in), filter var(--transition-hover-in), opacity var(--transition-hover-in);
 }
 
 .accent-button:hover {
@@ -276,7 +286,7 @@ strong {
   background: var(--surface-control-soft);
   border: 1px solid var(--border-soft);
   color: var(--text-primary);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+  transition: border-color var(--transition-state), box-shadow var(--transition-state), background var(--transition-state);
 }
 
 .form-text-input::placeholder {
@@ -428,7 +438,7 @@ strong {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width var(--transition-medium), min-width var(--transition-medium), max-width var(--transition-medium), flex-basis var(--transition-medium);
+  transition: width var(--transition-state), min-width var(--transition-state), max-width var(--transition-state), flex-basis var(--transition-state);
 }
 
 .sidebar-panel.collapsed {
@@ -484,11 +494,12 @@ strong {
   border-radius: var(--radius-md);
   color: rgba(255, 255, 255, 0.88);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--transition-hover-out), color var(--transition-hover-out);
 }
 
 .sidebar-item:hover {
   background: rgba(255, 255, 255, 0.05);
+  transition: background var(--transition-hover-in), color var(--transition-hover-in);
 }
 
 .sidebar-item.selected {
@@ -704,12 +715,13 @@ strong {
   border: 1px solid rgba(var(--accent-rgb), 0.42);
   background: linear-gradient(180deg, var(--surface-card-top), var(--surface-card-bottom));
   overflow: hidden;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color var(--transition-hover-out), transform var(--transition-hover-out);
 }
 
 .file-card:hover {
   border-color: rgba(var(--accent-rgb), 0.74);
   transform: translateY(-1px);
+  transition: border-color var(--transition-hover-in), transform var(--transition-hover-in);
 }
 
 .file-preview {
@@ -871,11 +883,12 @@ strong {
   border-radius: var(--radius-xs);
   color: rgba(255, 255, 255, 0.88);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--transition-hover-out), color var(--transition-hover-out);
 }
 
 .context-menu-item:hover {
   background: rgba(255, 255, 255, 0.08);
+  transition: background var(--transition-hover-in), color var(--transition-hover-in);
 }
 
 .context-menu-item:disabled {
@@ -983,12 +996,13 @@ strong {
   border-radius: var(--radius-xs);
   color: rgba(255, 255, 255, 0.72);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-hover-out), color var(--transition-hover-out);
 }
 
 .settings-modal-nav-item:hover {
   background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.92);
+  transition: background var(--transition-hover-in), color var(--transition-hover-in);
 }
 
 .settings-modal-nav-item.active {
@@ -1101,7 +1115,7 @@ strong {
   height: 28px;
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.16);
-  transition: background 0.18s ease;
+  transition: background var(--transition-state);
 }
 
 .settings-switch::after {
@@ -1114,7 +1128,7 @@ strong {
   border-radius: var(--radius-pill);
   background: #ffffff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
-  transition: transform 0.18s ease;
+  transition: transform var(--transition-state);
 }
 
 .settings-switch-input:checked + .settings-switch {
