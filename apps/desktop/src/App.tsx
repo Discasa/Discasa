@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
 import type { AlbumRecord, LibraryItem } from "@discasa/shared";
 import {
   createAlbum,
@@ -120,6 +121,7 @@ export function App() {
   const createAlbumInputRef = useRef<HTMLInputElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const albumsRef = useRef<AlbumRecord[]>([]);
+  const selectedViewRef = useRef<SidebarView>(selectedView);
 
   useEffect(() => {
     void bootstrap();
@@ -128,6 +130,10 @@ export function App() {
   useEffect(() => {
     albumsRef.current = albums;
   }, [albums]);
+
+  useEffect(() => {
+    selectedViewRef.current = selectedView;
+  }, [selectedView]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -246,6 +252,36 @@ export function App() {
         } catch {
           setError("Could not send the app to the system tray.");
         }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    void appWindow
+      .onDragDropEvent(async ({ payload }: { payload: DragDropEvent }) => {
+        if (payload.type === "over") {
+          setIsDraggingFiles(true);
+          return;
+        }
+
+        dragDepthRef.current = 0;
+        setIsDraggingFiles(false);
+
+        if (payload.type !== "drop") {
+          return;
+        }
+
+        await handleNativeFileDrop(payload.paths);
       })
       .then((fn) => {
         unlisten = fn;
@@ -452,6 +488,30 @@ export function App() {
     }
   }
 
+  async function commitUploadedFiles(files: File[]): Promise<void> {
+    const targetAlbumId = selectedViewRef.current.kind === "album" ? selectedViewRef.current.id : undefined;
+    await uploadFiles(files, targetAlbumId);
+
+    const [nextItems, nextAlbums] = await Promise.all([getLibraryItems(), getAlbums()]);
+    albumsRef.current = nextAlbums;
+    setItems(nextItems);
+    setAlbums(nextAlbums);
+    setMessage(`${files.length} file(s) added to the library.`);
+    setError("");
+  }
+
+  async function createFileFromNativePath(filePath: string): Promise<File> {
+    const response = await fetch(convertFileSrc(filePath));
+
+    if (!response.ok) {
+      throw new Error(`Failed to read dropped file: ${filePath}`);
+    }
+
+    const blob = await response.blob();
+    const name = filePath.split(/[\\/]/).pop() ?? "file";
+    return new File([blob], name, { type: blob.type || "application/octet-stream" });
+  }
+
   async function handleFiles(fileList: FileList | null): Promise<void> {
     if (!fileList || fileList.length === 0) return;
 
@@ -459,14 +519,23 @@ export function App() {
     setError("");
 
     try {
-      const targetAlbumId = selectedView.kind === "album" ? selectedView.id : undefined;
-      await uploadFiles(Array.from(fileList), targetAlbumId);
+      await commitUploadedFiles(Array.from(fileList));
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Failed to add files.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
 
-      const [nextItems, nextAlbums] = await Promise.all([getLibraryItems(), getAlbums()]);
-      albumsRef.current = nextAlbums;
-      setItems(nextItems);
-      setAlbums(nextAlbums);
-      setMessage(`${fileList.length} file(s) added to the library.`);
+  async function handleNativeFileDrop(filePaths: string[]): Promise<void> {
+    if (filePaths.length === 0) return;
+
+    setIsBusy(true);
+    setError("");
+
+    try {
+      const files = await Promise.all(filePaths.map((filePath) => createFileFromNativePath(filePath)));
+      await commitUploadedFiles(files);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Failed to add files.");
     } finally {
