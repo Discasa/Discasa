@@ -1,4 +1,14 @@
-import { useMemo, useState, type CSSProperties, type ChangeEvent, type DragEvent, type ReactNode } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ChangeEvent,
+  type DragEvent,
+  type PointerEvent as ReactPointerEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import type { LibraryItem } from "@discasa/shared";
 import { getFileTypeLabel, isImage, isVideo } from "../lib/library-helpers";
 import { UploadIcon } from "./icons";
@@ -7,6 +17,7 @@ type LibraryPanelProps = {
   title: string;
   description: string;
   items: LibraryItem[];
+  selectedItemIds: string[];
   isBusy: boolean;
   isDraggingFiles: boolean;
   thumbnailSize: number;
@@ -14,6 +25,9 @@ type LibraryPanelProps = {
   thumbnailZoomLevelCount: number;
   thumbnailZoomPercent: number;
   onThumbnailZoomIndexChange: (nextIndex: number) => void;
+  onSelectItem: (itemId: string, options: { range: boolean; toggle: boolean }) => void;
+  onClearSelection: () => void;
+  onApplySelectionRect: (itemIds: string[], mode: "replace" | "add") => void;
   onRequestUpload: () => void;
   onDragEnter: (event: DragEvent<HTMLElement>) => void;
   onDragLeave: (event: DragEvent<HTMLElement>) => void;
@@ -25,7 +39,24 @@ type LibraryPanelProps = {
   onDeleteItem: (itemId: string) => Promise<void>;
 };
 
+type SelectionBox = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type SelectionSession = {
+  startClientX: number;
+  startClientY: number;
+  additive: boolean;
+  initialSelectedIds: string[];
+  itemRects: Array<{ id: string; rect: DOMRect }>;
+  hasExceededThreshold: boolean;
+};
+
 const bytesFormatter = new Intl.NumberFormat("en-US");
+const SELECTION_DRAG_THRESHOLD = 4;
 
 const previewMediaStyle: CSSProperties = {
   width: "100%",
@@ -173,6 +204,24 @@ function getFallbackLabel(item: LibraryItem): string {
   return item.mimeType.split("/")[0]?.toUpperCase() || "FILE";
 }
 
+function rectanglesIntersect(left: DOMRect, right: DOMRect): boolean {
+  return !(
+    left.right < right.left ||
+    left.left > right.right ||
+    left.bottom < right.top ||
+    left.top > right.bottom
+  );
+}
+
+function createViewportSelectionRect(startClientX: number, startClientY: number, currentClientX: number, currentClientY: number): DOMRect {
+  const left = Math.min(startClientX, currentClientX);
+  const top = Math.min(startClientY, currentClientY);
+  const width = Math.abs(currentClientX - startClientX);
+  const height = Math.abs(currentClientY - startClientY);
+
+  return new DOMRect(left, top, width, height);
+}
+
 function FileThumbnail({ item, actions }: { item: LibraryItem; actions: ReactNode }) {
   const [hasPreviewError, setHasPreviewError] = useState(false);
 
@@ -235,6 +284,7 @@ export function LibraryPanel({
   title,
   description,
   items,
+  selectedItemIds,
   isBusy,
   isDraggingFiles,
   thumbnailSize,
@@ -242,6 +292,9 @@ export function LibraryPanel({
   thumbnailZoomLevelCount,
   thumbnailZoomPercent,
   onThumbnailZoomIndexChange,
+  onSelectItem,
+  onClearSelection,
+  onApplySelectionRect,
   onRequestUpload,
   onDragEnter,
   onDragLeave,
@@ -252,8 +305,137 @@ export function LibraryPanel({
   onRestoreFromTrash,
   onDeleteItem,
 }: LibraryPanelProps) {
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const itemElementMapRef = useRef(new Map<string, HTMLElement>());
+  const selectionSessionRef = useRef<SelectionSession | null>(null);
+  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+
+  const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
+
   function handleThumbnailZoomChange(event: ChangeEvent<HTMLInputElement>): void {
     onThumbnailZoomIndexChange(Number(event.currentTarget.value));
+  }
+
+  function setItemElement(itemId: string, element: HTMLElement | null): void {
+    if (element) {
+      itemElementMapRef.current.set(itemId, element);
+      return;
+    }
+
+    itemElementMapRef.current.delete(itemId);
+  }
+
+  function stopActionEvent(event: ReactMouseEvent<HTMLButtonElement> | ReactPointerEvent<HTMLButtonElement>): void {
+    event.stopPropagation();
+  }
+
+  function handleItemClick(event: ReactMouseEvent<HTMLElement>, itemId: string): void {
+    onSelectItem(itemId, {
+      range: event.shiftKey,
+      toggle: event.ctrlKey || event.metaKey,
+    });
+  }
+
+  function updateSelectionBox(currentClientX: number, currentClientY: number): void {
+    const gridElement = gridRef.current;
+    const session = selectionSessionRef.current;
+
+    if (!gridElement || !session) {
+      return;
+    }
+
+    const viewportRect = createViewportSelectionRect(
+      session.startClientX,
+      session.startClientY,
+      currentClientX,
+      currentClientY,
+    );
+    const gridViewportRect = gridElement.getBoundingClientRect();
+    const hitItemIds = session.itemRects
+      .filter(({ rect }) => rectanglesIntersect(viewportRect, rect))
+      .map(({ id }) => id);
+    const nextSelectedIds = session.additive
+      ? Array.from(new Set([...session.initialSelectedIds, ...hitItemIds]))
+      : hitItemIds;
+
+    setSelectionBox({
+      left: viewportRect.left - gridViewportRect.left + gridElement.scrollLeft,
+      top: viewportRect.top - gridViewportRect.top + gridElement.scrollTop,
+      width: viewportRect.width,
+      height: viewportRect.height,
+    });
+    onApplySelectionRect(nextSelectedIds, "replace");
+  }
+
+  function handleGridPointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0 || event.target !== event.currentTarget || items.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+
+    selectionSessionRef.current = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      additive: event.ctrlKey || event.metaKey,
+      initialSelectedIds: selectedItemIds,
+      itemRects: items
+        .map((item) => {
+          const element = itemElementMapRef.current.get(item.id);
+          if (!element) {
+            return null;
+          }
+
+          return {
+            id: item.id,
+            rect: element.getBoundingClientRect(),
+          };
+        })
+        .filter((entry): entry is { id: string; rect: DOMRect } => Boolean(entry)),
+      hasExceededThreshold: false,
+    };
+
+    const handleWindowPointerMove = (moveEvent: PointerEvent) => {
+      const session = selectionSessionRef.current;
+      if (!session) {
+        return;
+      }
+
+      const deltaX = Math.abs(moveEvent.clientX - session.startClientX);
+      const deltaY = Math.abs(moveEvent.clientY - session.startClientY);
+      const hasExceededThreshold = deltaX >= SELECTION_DRAG_THRESHOLD || deltaY >= SELECTION_DRAG_THRESHOLD;
+
+      if (!hasExceededThreshold) {
+        return;
+      }
+
+      session.hasExceededThreshold = true;
+      updateSelectionBox(moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const handleWindowPointerUp = (upEvent: PointerEvent) => {
+      const session = selectionSessionRef.current;
+
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", handleWindowPointerUp);
+
+      if (!session) {
+        setSelectionBox(null);
+        return;
+      }
+
+      if (session.hasExceededThreshold) {
+        updateSelectionBox(upEvent.clientX, upEvent.clientY);
+      } else if (!session.additive) {
+        onClearSelection();
+      }
+
+      selectionSessionRef.current = null;
+      setSelectionBox(null);
+    };
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("pointerup", handleWindowPointerUp);
   }
 
   function renderThumbnailActions(item: LibraryItem) {
@@ -263,7 +445,11 @@ export function LibraryPanel({
           <button
             type="button"
             className="file-icon-button"
-            onClick={() => void onRestoreFromTrash(item.id)}
+            onPointerDown={stopActionEvent}
+            onClick={(event) => {
+              stopActionEvent(event);
+              void onRestoreFromTrash(item.id);
+            }}
             aria-label="Restore"
             title="Restore"
           >
@@ -272,7 +458,11 @@ export function LibraryPanel({
           <button
             type="button"
             className="file-icon-button danger"
-            onClick={() => void onDeleteItem(item.id)}
+            onPointerDown={stopActionEvent}
+            onClick={(event) => {
+              stopActionEvent(event);
+              void onDeleteItem(item.id);
+            }}
             aria-label="Delete permanently"
             title="Delete permanently"
           >
@@ -287,7 +477,11 @@ export function LibraryPanel({
         <button
           type="button"
           className={`file-icon-button ${item.isFavorite ? "active" : ""}`}
-          onClick={() => void onToggleFavorite(item.id)}
+          onPointerDown={stopActionEvent}
+          onClick={(event) => {
+            stopActionEvent(event);
+            void onToggleFavorite(item.id);
+          }}
           aria-label={item.isFavorite ? "Unfavorite" : "Favorite"}
           title={item.isFavorite ? "Unfavorite" : "Favorite"}
         >
@@ -296,7 +490,11 @@ export function LibraryPanel({
         <button
           type="button"
           className="file-icon-button danger"
-          onClick={() => void onMoveToTrash(item.id)}
+          onPointerDown={stopActionEvent}
+          onClick={(event) => {
+            stopActionEvent(event);
+            void onMoveToTrash(item.id);
+          }}
           aria-label="Trash"
           title="Trash"
         >
@@ -345,18 +543,43 @@ export function LibraryPanel({
       </div>
 
       <div
-        className="files-grid scrollable-y subtle-scrollbar content-scrollbar-host"
+        ref={gridRef}
+        className={`files-grid scrollable-y subtle-scrollbar content-scrollbar-host ${selectionBox ? "selecting" : ""}`}
         style={{ "--file-card-width": `${thumbnailSize}px` } as CSSProperties}
+        onPointerDown={handleGridPointerDown}
       >
-        {items.map((item) => (
-          <article key={item.id} className="file-tile" title={item.name}>
-            <FileThumbnail item={item} actions={renderThumbnailActions(item)} />
-            <div className="file-meta">
-              <span className="file-name">{item.name}</span>
-              <small className="file-size">{bytesFormatter.format(item.size)} bytes</small>
-            </div>
-          </article>
-        ))}
+        {items.map((item) => {
+          const isSelected = selectedItemIdSet.has(item.id);
+
+          return (
+            <article
+              key={item.id}
+              ref={(element) => setItemElement(item.id, element)}
+              className={`file-tile ${isSelected ? "selected" : ""}`}
+              title={item.name}
+              onClick={(event) => handleItemClick(event, item.id)}
+            >
+              <FileThumbnail item={item} actions={renderThumbnailActions(item)} />
+              <div className="file-meta">
+                <span className="file-name">{item.name}</span>
+                <small className="file-size">{bytesFormatter.format(item.size)} bytes</small>
+              </div>
+            </article>
+          );
+        })}
+
+        {selectionBox ? (
+          <div
+            className="selection-box"
+            aria-hidden="true"
+            style={{
+              left: `${selectionBox.left}px`,
+              top: `${selectionBox.top}px`,
+              width: `${selectionBox.width}px`,
+              height: `${selectionBox.height}px`,
+            }}
+          />
+        ) : null}
 
         {items.length === 0 && !isBusy ? (
           <button type="button" className="empty-state" onClick={onRequestUpload}>

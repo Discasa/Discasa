@@ -24,6 +24,7 @@ import logoUrl from "./assets/discasa-logo.png";
 import { AlbumContextMenu } from "./components/AlbumContextMenu";
 import { AlbumModal } from "./components/AlbumModal";
 import { DeleteAlbumModal } from "./components/DeleteAlbumModal";
+import { DeleteFileModal } from "./components/DeleteFileModal";
 import { LibraryPanel } from "./components/LibraryPanel";
 import { SettingsModal } from "./components/SettingsModal";
 import { Sidebar } from "./components/Sidebar";
@@ -171,6 +172,10 @@ export function App() {
   const [deleteAlbumTarget, setDeleteAlbumTarget] = useState<{ id: string; name: string } | null>(null);
   const [isDeletingAlbum, setIsDeletingAlbum] = useState(false);
   const [deleteAlbumError, setDeleteAlbumError] = useState("");
+  const [deleteFileTarget, setDeleteFileTarget] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
+  const [deleteFileError, setDeleteFileError] = useState("");
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [thumbnailZoomIndex, setThumbnailZoomIndex] = useState<number>(() => {
     const storedPercent = readStoredNumber(THUMBNAIL_ZOOM_KEY, DEFAULT_THUMBNAIL_ZOOM_PERCENT);
     return getClosestThumbnailZoomIndex(storedPercent);
@@ -182,6 +187,7 @@ export function App() {
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const albumsRef = useRef<AlbumRecord[]>([]);
   const selectedViewRef = useRef<SidebarView>(selectedView);
+  const selectionAnchorRef = useRef<string | null>(null);
 
   const thumbnailZoomPercent = THUMBNAIL_ZOOM_LEVELS[thumbnailZoomIndex] ?? DEFAULT_THUMBNAIL_ZOOM_PERCENT;
   const thumbnailSize = getThumbnailSizeFromZoomPercent(thumbnailZoomPercent);
@@ -302,10 +308,17 @@ export function App() {
   }, [isCreateAlbumOpen]);
 
   useEffect(() => {
-    if (!isSettingsOpen && !isCreateAlbumOpen && !deleteAlbumTarget) return;
+    if (!isSettingsOpen && !isCreateAlbumOpen && !deleteAlbumTarget && !deleteFileTarget) return;
 
     const handleEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
+
+      if (deleteFileTarget) {
+        if (!isDeletingFile) {
+          closeDeleteFileModal();
+        }
+        return;
+      }
 
       if (deleteAlbumTarget) {
         if (!isDeletingAlbum) {
@@ -329,7 +342,7 @@ export function App() {
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [isSettingsOpen, isCreateAlbumOpen, deleteAlbumTarget, isDeletingAlbum]);
+  }, [isSettingsOpen, isCreateAlbumOpen, deleteAlbumTarget, isDeletingAlbum, deleteFileTarget, isDeletingFile]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -465,8 +478,93 @@ export function App() {
   );
 
   const visibleItems = useMemo(() => getVisibleItems(items, selectedView), [items, selectedView]);
+  const visibleItemIds = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
   const currentTitle = useMemo(() => getCurrentTitle(selectedView, albums), [albums, selectedView]);
   const currentDescription = useMemo(() => getCurrentDescription(selectedView), [selectedView]);
+
+  useEffect(() => {
+    setSelectedItemIds([]);
+    selectionAnchorRef.current = null;
+  }, [selectedView]);
+
+  useEffect(() => {
+    const visibleIdSet = new Set(visibleItemIds);
+
+    setSelectedItemIds((current) => current.filter((itemId) => visibleIdSet.has(itemId)));
+
+    if (selectionAnchorRef.current && !visibleIdSet.has(selectionAnchorRef.current)) {
+      selectionAnchorRef.current = visibleItemIds[0] ?? null;
+    }
+  }, [visibleItemIds]);
+
+  function orderSelectionByVisibleItems(itemIds: string[]): string[] {
+    const uniqueIds = new Set(itemIds);
+    return visibleItemIds.filter((itemId) => uniqueIds.has(itemId));
+  }
+
+  function handleClearSelectedItems(): void {
+    setSelectedItemIds([]);
+    selectionAnchorRef.current = null;
+  }
+
+  function handleSelectItem(itemId: string, options: { range: boolean; toggle: boolean }): void {
+    if (!visibleItemIds.includes(itemId)) {
+      return;
+    }
+
+    if (options.range) {
+      const anchorId = selectionAnchorRef.current && visibleItemIds.includes(selectionAnchorRef.current)
+        ? selectionAnchorRef.current
+        : itemId;
+      const anchorIndex = visibleItemIds.indexOf(anchorId);
+      const itemIndex = visibleItemIds.indexOf(itemId);
+      const start = Math.min(anchorIndex, itemIndex);
+      const end = Math.max(anchorIndex, itemIndex);
+      const rangeIds = visibleItemIds.slice(start, end + 1);
+
+      setSelectedItemIds((current) => {
+        if (options.toggle) {
+          return orderSelectionByVisibleItems([...current, ...rangeIds]);
+        }
+
+        return rangeIds;
+      });
+
+      selectionAnchorRef.current = anchorId;
+      return;
+    }
+
+    if (options.toggle) {
+      setSelectedItemIds((current) => {
+        if (current.includes(itemId)) {
+          return current.filter((entry) => entry !== itemId);
+        }
+
+        return orderSelectionByVisibleItems([...current, itemId]);
+      });
+      selectionAnchorRef.current = itemId;
+      return;
+    }
+
+    setSelectedItemIds([itemId]);
+    selectionAnchorRef.current = itemId;
+  }
+
+  function handleApplySelectionRect(itemIds: string[], mode: "replace" | "add"): void {
+    const orderedItemIds = orderSelectionByVisibleItems(itemIds);
+
+    setSelectedItemIds((current) => {
+      if (mode === "add") {
+        return orderSelectionByVisibleItems([...current, ...orderedItemIds]);
+      }
+
+      return orderedItemIds;
+    });
+
+    if (orderedItemIds.length > 0) {
+      selectionAnchorRef.current = orderedItemIds[0] ?? selectionAnchorRef.current;
+    }
+  }
 
   function updateItemInState(nextItem: LibraryItem): void {
     setItems((current) => current.map((item) => (item.id === nextItem.id ? nextItem : item)));
@@ -474,6 +572,11 @@ export function App() {
 
   function removeItemFromState(itemId: string): void {
     setItems((current) => current.filter((item) => item.id !== itemId));
+    setSelectedItemIds((current) => current.filter((id) => id !== itemId));
+
+    if (selectionAnchorRef.current === itemId) {
+      selectionAnchorRef.current = null;
+    }
   }
 
   function getAlbumIndex(albumId: string): number {
@@ -530,6 +633,20 @@ export function App() {
     if (isDeletingAlbum) return;
     setDeleteAlbumTarget(null);
     setDeleteAlbumError("");
+  }
+
+  function openDeleteFileModal(itemId: string): void {
+    const item = items.find((entry) => entry.id === itemId);
+    if (!item) return;
+
+    setDeleteFileError("");
+    setDeleteFileTarget({ id: item.id, name: item.name });
+  }
+
+  function closeDeleteFileModal(): void {
+    if (isDeletingFile) return;
+    setDeleteFileTarget(null);
+    setDeleteFileError("");
   }
 
   async function handleCreateAlbumSubmit(event?: FormEvent<HTMLFormElement>): Promise<void> {
@@ -756,17 +873,29 @@ export function App() {
     }
   }
 
-  async function handleDeleteItem(itemId: string): Promise<void> {
-    const confirmed = window.confirm("Delete this file permanently?");
-    if (!confirmed) return;
+  function handleDeleteItem(itemId: string): Promise<void> {
+    openDeleteFileModal(itemId);
+    return Promise.resolve();
+  }
+
+  async function handleDeleteFileConfirm(): Promise<void> {
+    if (!deleteFileTarget) return;
+
+    setIsDeletingFile(true);
+    setDeleteFileError("");
 
     try {
-      await deleteLibraryItem(itemId);
-      removeItemFromState(itemId);
+      await deleteLibraryItem(deleteFileTarget.id);
+      removeItemFromState(deleteFileTarget.id);
       setMessage("File permanently deleted.");
       setError("");
+      setDeleteFileTarget(null);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not delete the file.");
+      const nextError = caughtError instanceof Error ? caughtError.message : "Could not delete the file.";
+      setDeleteFileError(nextError);
+      setError(nextError);
+    } finally {
+      setIsDeletingFile(false);
     }
   }
 
@@ -929,6 +1058,7 @@ export function App() {
             title={currentTitle}
             description={currentDescription}
             items={visibleItems}
+            selectedItemIds={selectedItemIds}
             isBusy={isBusy}
             isDraggingFiles={isDraggingFiles}
             thumbnailSize={thumbnailSize}
@@ -938,6 +1068,9 @@ export function App() {
             onThumbnailZoomIndexChange={(nextIndex) =>
               setThumbnailZoomIndex(clampNumber(nextIndex, 0, THUMBNAIL_ZOOM_LEVELS.length - 1))
             }
+            onSelectItem={handleSelectItem}
+            onClearSelection={handleClearSelectedItems}
+            onApplySelectionRect={handleApplySelectionRect}
             onRequestUpload={requestUpload}
             onDragEnter={handleFileDragEnter}
             onDragLeave={handleFileDragLeave}
@@ -977,6 +1110,16 @@ export function App() {
               setCreateAlbumError("");
             }
           }}
+        />
+      ) : null}
+
+      {deleteFileTarget ? (
+        <DeleteFileModal
+          fileName={deleteFileTarget.name}
+          isDeleting={isDeletingFile}
+          error={deleteFileError}
+          onClose={closeDeleteFileModal}
+          onConfirm={handleDeleteFileConfirm}
         />
       ) : null}
 

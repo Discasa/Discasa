@@ -21,15 +21,19 @@ export function Titlebar({
   onToggleMaximize,
   onClose,
 }: TitlebarProps) {
+  function handleTitlebarMouseDown(event: MouseEvent<HTMLElement>) {
+    const target = event.target as HTMLElement | null;
+
+    if (target?.closest("[data-window-control='true']")) {
+      return;
+    }
+
+    void onDragStart(event);
+  }
+
   return (
-    <header className="titlebar">
-      <div
-        className="titlebar-drag-region"
-        aria-hidden="true"
-        onMouseDown={(event) => {
-          void onDragStart(event);
-        }}
-      >
+    <header className="titlebar" onMouseDown={handleTitlebarMouseDown}>
+      <div className="titlebar-drag-region" aria-hidden="true">
         <div className="brand">
           <img src={logoUrl} alt="Discasa" className="brand-logo" />
           <span className="brand-name">Discasa</span>
@@ -43,12 +47,19 @@ export function Titlebar({
           onClick={onOpenSettings}
           aria-label="Open settings"
           title="Open settings"
+          data-window-control="true"
         >
           <span className="window-glyph icon-glyph">
             <SettingsIcon />
           </span>
         </button>
-        <button type="button" className="icon-circle-button window-button" onClick={() => void onMinimize()} aria-label="Minimize">
+        <button
+          type="button"
+          className="icon-circle-button window-button"
+          onClick={() => void onMinimize()}
+          aria-label="Minimize"
+          data-window-control="true"
+        >
           <span className="window-glyph minimize" />
         </button>
         <button
@@ -56,10 +67,17 @@ export function Titlebar({
           className="icon-circle-button window-button"
           onClick={() => void onToggleMaximize()}
           aria-label={windowState === "maximized" ? "Restore window" : "Maximize window"}
+          data-window-control="true"
         >
           <span className="window-glyph maximize" />
         </button>
-        <button type="button" className="icon-circle-button window-button close-button" onClick={() => void onClose()} aria-label="Close">
+        <button
+          type="button"
+          className="icon-circle-button window-button close-button"
+          onClick={() => void onClose()}
+          aria-label="Close"
+          data-window-control="true"
+        >
           <span className="window-glyph close" />
         </button>
       </div>
