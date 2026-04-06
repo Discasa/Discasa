@@ -270,6 +270,7 @@ export function App() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
 
     void appWindow
       .onDragDropEvent(async ({ payload }: { payload: DragDropEvent }) => {
@@ -288,13 +289,17 @@ export function App() {
         await handleNativeFileDrop(payload.paths);
       })
       .then((fn) => {
+        if (disposed) {
+          fn();
+          return;
+        }
+
         unlisten = fn;
       });
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      disposed = true;
+      unlisten?.();
     };
   }, []);
 
