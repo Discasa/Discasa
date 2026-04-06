@@ -1,5 +1,5 @@
 export const DISCASA_CATEGORY_NAME = "Discasa";
-export const DISCASA_CHANNELS = ["discasa-drive", "discasa-index", "discasa-trash"] as const;
+export const DISCASA_CHANNELS = ["discasa-drive", "discasa-index", "discasa-folder", "discasa-trash", "discasa-config"] as const;
 
 export type GuildSummary = {
   id: string;
@@ -55,6 +55,59 @@ export type LibraryItem = {
   isTrashed: boolean;
   storageChannelId?: string;
   storageMessageId?: string;
+};
+
+export type LibraryItemIndex = Omit<LibraryItem, "albumIds">;
+
+export type FolderNode = {
+  id: string;
+  type: "album";
+  name: string;
+  parentId: string | null;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FolderMembership = {
+  folderId: string;
+  itemId: string;
+  addedAt: string;
+};
+
+export type DiscasaConfig = {
+  accentColor: string;
+  minimizeToTray: boolean;
+  closeToTray: boolean;
+  thumbnailZoomPercent: number;
+  sidebarCollapsed: boolean;
+};
+
+export const DISCASA_DEFAULT_CONFIG: DiscasaConfig = {
+  accentColor: "#E9881D",
+  minimizeToTray: false,
+  closeToTray: false,
+  thumbnailZoomPercent: 35,
+  sidebarCollapsed: false,
+};
+
+export type PersistedIndexSnapshot = {
+  version: 2;
+  updatedAt: string;
+  items: LibraryItemIndex[];
+};
+
+export type PersistedFolderSnapshot = {
+  version: 1;
+  updatedAt: string;
+  folders: FolderNode[];
+  memberships: FolderMembership[];
+};
+
+export type PersistedConfigSnapshot = {
+  version: 1;
+  updatedAt: string;
+  config: DiscasaConfig;
 };
 
 export type UploadResponse = {

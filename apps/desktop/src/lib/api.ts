@@ -3,6 +3,7 @@ import type {
   AlbumRecord,
   AppSession,
   CreateAlbumInput,
+  DiscasaConfig,
   DiscasaInitializationResponse,
   GuildSummary,
   LibraryItem,
@@ -68,6 +69,17 @@ export async function initializeDiscasa(guildId: string): Promise<DiscasaInitial
   return requestJson<DiscasaInitializationResponse>("/api/discasa/initialize", {
     method: "POST",
     body: JSON.stringify({ guildId }),
+  });
+}
+
+export async function getAppConfig(): Promise<DiscasaConfig> {
+  return requestJson<DiscasaConfig>("/api/config");
+}
+
+export async function updateAppConfig(input: Partial<DiscasaConfig>): Promise<DiscasaConfig> {
+  return requestJson<DiscasaConfig>("/api/config", {
+    method: "PATCH",
+    body: JSON.stringify(input),
   });
 }
 

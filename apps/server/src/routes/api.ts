@@ -5,29 +5,43 @@ import {
   addAlbum,
   addMockFiles,
   addUploadedFiles,
+  createConfigSnapshot,
+  createFolderSnapshot,
   createIndexSnapshot,
   deleteAlbum,
   deleteLibraryItem,
   getActiveStorageContext,
   getAlbums,
+  getDiscasaConfig,
   getLibraryItem,
   getLibraryItems,
+  replaceConfigFromSnapshot,
+  replaceDatabaseFromFolderSnapshot,
   replaceDatabaseFromIndexSnapshot,
   renameAlbum,
   reorderAlbums,
+  resetDiscasaConfig,
   restoreLibraryItem,
   setActiveStorageContext,
   toggleFavoriteState,
   trashLibraryItem,
+  updateDiscasaConfig,
   updateLibraryItemStorage,
 } from "../lib/store";
 import {
   deleteStoredItemFromDiscord,
+  hasCurrentConfigSnapshot,
+  hasCurrentFolderSnapshot,
+  hasCurrentIndexSnapshot,
   initializeDiscasaInGuild,
   listEligibleGuilds,
   moveStoredItemToTrash,
+  readLatestConfigSnapshot,
+  readLatestFolderSnapshot,
   readLatestIndexSnapshot,
   restoreStoredItemFromTrash,
+  syncConfigSnapshot,
+  syncFolderSnapshot,
   syncIndexSnapshot,
   uploadFilesToDiscordDrive,
 } from "../services/discordService";
@@ -42,6 +56,28 @@ async function syncRemoteIndexState(): Promise<void> {
   }
 
   await syncIndexSnapshot(context, createIndexSnapshot());
+}
+
+async function syncRemoteFolderState(): Promise<void> {
+  const context = getActiveStorageContext();
+  if (!context || env.mockMode) {
+    return;
+  }
+
+  await syncFolderSnapshot(context, createFolderSnapshot());
+}
+
+async function syncRemoteConfigState(): Promise<void> {
+  const context = getActiveStorageContext();
+  if (!context || env.mockMode) {
+    return;
+  }
+
+  await syncConfigSnapshot(context, createConfigSnapshot());
+}
+
+async function syncRemoteLibraryState(): Promise<void> {
+  await Promise.all([syncRemoteIndexState(), syncRemoteFolderState()]);
 }
 
 router.get("/session", (request, response) => {
@@ -92,19 +128,104 @@ router.post("/discasa/initialize", async (request, response, next) => {
     const result = await initializeDiscasaInGuild(guildId);
     setActiveStorageContext(result);
 
-    const snapshot = await readLatestIndexSnapshot(result);
+    const [indexSnapshot, folderSnapshot, configSnapshot, hasCurrentIndex, hasCurrentFolder, hasCurrentConfig] = await Promise.all([
+      readLatestIndexSnapshot(result),
+      readLatestFolderSnapshot(result),
+      readLatestConfigSnapshot(result),
+      hasCurrentIndexSnapshot(result),
+      hasCurrentFolderSnapshot(result),
+      hasCurrentConfigSnapshot(result),
+    ]);
 
-    if (snapshot) {
-      replaceDatabaseFromIndexSnapshot(snapshot);
+    if (indexSnapshot) {
+      replaceDatabaseFromIndexSnapshot(indexSnapshot);
     } else {
-      await syncIndexSnapshot(result, createIndexSnapshot());
+      replaceDatabaseFromIndexSnapshot({
+        version: 2,
+        updatedAt: new Date().toISOString(),
+        items: [],
+      });
+    }
+
+    if (folderSnapshot) {
+      replaceDatabaseFromFolderSnapshot(folderSnapshot);
+    } else {
+      replaceDatabaseFromFolderSnapshot({
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        folders: [],
+        memberships: [],
+      });
+    }
+
+    if (configSnapshot) {
+      replaceConfigFromSnapshot(configSnapshot);
+    } else {
+      resetDiscasaConfig();
+    }
+
+    if (!hasCurrentIndex) {
+      await syncRemoteIndexState();
+    }
+
+    if (!hasCurrentFolder) {
+      await syncRemoteFolderState();
+    }
+
+    if (!hasCurrentConfig) {
+      await syncRemoteConfigState();
     }
 
     response.json({
       guildId: result.guildId,
       categoryName: result.categoryName,
-      channels: [result.driveChannelName, result.indexChannelName, result.trashChannelName],
+      channels: [
+        result.driveChannelName,
+        result.indexChannelName,
+        result.folderChannelName,
+        result.trashChannelName,
+        result.configChannelName,
+      ],
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/config", async (_request, response, next) => {
+  try {
+    const activeStorage = getActiveStorageContext();
+
+    if (!activeStorage) {
+      response.json(resetDiscasaConfig());
+      return;
+    }
+
+    if (env.mockMode) {
+      response.json(getDiscasaConfig());
+      return;
+    }
+
+    const snapshot = await readLatestConfigSnapshot(activeStorage);
+
+    if (snapshot) {
+      replaceConfigFromSnapshot(snapshot);
+    } else {
+      resetDiscasaConfig();
+      await syncRemoteConfigState();
+    }
+
+    response.json(getDiscasaConfig());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/config", async (request, response, next) => {
+  try {
+    const nextConfig = updateDiscasaConfig(request.body ?? {});
+    await syncRemoteConfigState();
+    response.json(nextConfig);
   } catch (error) {
     next(error);
   }
@@ -124,7 +245,7 @@ router.post("/albums", async (request, response, next) => {
     }
 
     const created = addAlbum(name);
-    await syncRemoteIndexState();
+    await syncRemoteFolderState();
     response.status(201).json({ id: created.id });
   } catch (error) {
     next(error);
@@ -148,7 +269,7 @@ router.patch("/albums/:albumId", async (request, response, next) => {
       return;
     }
 
-    await syncRemoteIndexState();
+    await syncRemoteFolderState();
     response.json(updated);
   } catch (error) {
     next(error);
@@ -167,7 +288,7 @@ router.put("/albums/reorder", async (request, response, next) => {
     }
 
     const albums = reorderAlbums(orderedIds);
-    await syncRemoteIndexState();
+    await syncRemoteFolderState();
     response.json({ albums });
   } catch (error) {
     next(error);
@@ -190,7 +311,7 @@ router.delete("/albums/:albumId", async (request, response, next) => {
       return;
     }
 
-    await syncRemoteIndexState();
+    await syncRemoteFolderState();
     response.json({ deleted: true });
   } catch (error) {
     next(error);
@@ -213,6 +334,7 @@ router.post("/upload", upload.array("files"), async (request, response, next) =>
 
     if (env.mockMode) {
       const uploaded = addMockFiles(files, albumId);
+      await syncRemoteLibraryState();
       response.status(201).json({ uploaded });
       return;
     }
@@ -226,7 +348,7 @@ router.post("/upload", upload.array("files"), async (request, response, next) =>
 
     const uploadedRecords = await uploadFilesToDiscordDrive(files, activeStorage);
     const uploaded = addUploadedFiles(uploadedRecords, albumId);
-    await syncRemoteIndexState();
+    await syncRemoteLibraryState();
     response.status(201).json({ uploaded });
   } catch (error) {
     next(error);
@@ -357,7 +479,7 @@ router.delete("/library/:itemId", async (request, response, next) => {
       return;
     }
 
-    await syncRemoteIndexState();
+    await syncRemoteLibraryState();
     response.json({ deleted: true });
   } catch (error) {
     next(error);

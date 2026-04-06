@@ -1,8 +1,14 @@
 import {
   DISCASA_CATEGORY_NAME,
   DISCASA_CHANNELS,
+  type DiscasaConfig,
+  type FolderMembership,
+  type FolderNode,
   type GuildSummary,
   type LibraryItem,
+  type PersistedConfigSnapshot,
+  type PersistedFolderSnapshot,
+  type PersistedIndexSnapshot,
 } from "@discasa/shared";
 import {
   ChannelType,
@@ -12,7 +18,7 @@ import {
   PermissionsBitField,
   type GuildTextBasedChannel,
 } from "discord.js";
-import type { ActiveStorageContext, PersistedIndexSnapshot, UploadedFileRecord } from "../lib/store";
+import type { ActiveStorageContext, UploadedFileRecord } from "../lib/store";
 import { env } from "../lib/env";
 
 type DiscordUserGuild = {
@@ -22,7 +28,21 @@ type DiscordUserGuild = {
   permissions: string;
 };
 
-const INDEX_SNAPSHOT_FILENAME = "discasa-index.json";
+type LegacyPersistedAlbum = {
+  id: string;
+  name: string;
+};
+
+type LegacyPersistedIndexSnapshot = {
+  version: 1;
+  albums: LegacyPersistedAlbum[];
+  items: LibraryItem[];
+};
+
+const INDEX_SNAPSHOT_FILENAME = "discasa-index.snapshot.json";
+const LEGACY_INDEX_SNAPSHOT_FILENAME = "discasa-index.json";
+const FOLDER_SNAPSHOT_FILENAME = "discasa-folder.snapshot.json";
+const CONFIG_SNAPSHOT_FILENAME = "discasa-config.snapshot.json";
 let botClient: Client | null = null;
 
 async function getBotClient(): Promise<Client | null> {
@@ -244,6 +264,174 @@ async function transferItemBetweenChannels(
   return moved;
 }
 
+function isIndexSnapshot(raw: unknown): raw is PersistedIndexSnapshot {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+
+  const entry = raw as Record<string, unknown>;
+  return entry.version === 2 && Array.isArray(entry.items);
+}
+
+function isLegacyIndexSnapshot(raw: unknown): raw is LegacyPersistedIndexSnapshot {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+
+  const entry = raw as Record<string, unknown>;
+  return entry.version === 1 && Array.isArray(entry.albums) && Array.isArray(entry.items);
+}
+
+function isFolderSnapshot(raw: unknown): raw is PersistedFolderSnapshot {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+
+  const entry = raw as Record<string, unknown>;
+  return entry.version === 1 && Array.isArray(entry.folders) && Array.isArray(entry.memberships);
+}
+
+function isDiscasaConfig(raw: unknown): raw is DiscasaConfig {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+
+  const entry = raw as Record<string, unknown>;
+  return (
+    typeof entry.accentColor === "string" &&
+    typeof entry.minimizeToTray === "boolean" &&
+    typeof entry.closeToTray === "boolean" &&
+    typeof entry.thumbnailZoomPercent === "number" &&
+    typeof entry.sidebarCollapsed === "boolean"
+  );
+}
+
+function isConfigSnapshot(raw: unknown): raw is PersistedConfigSnapshot {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+
+  const entry = raw as Record<string, unknown>;
+  return entry.version === 1 && isDiscasaConfig(entry.config);
+}
+
+function convertLegacyIndexToCurrent(raw: LegacyPersistedIndexSnapshot): PersistedIndexSnapshot {
+  return {
+    version: 2,
+    updatedAt: new Date().toISOString(),
+    items: raw.items.map((item) => {
+      const { albumIds: _albumIds, ...indexItem } = item;
+      return indexItem;
+    }),
+  };
+}
+
+function deriveFolderSnapshotFromLegacyIndex(raw: LegacyPersistedIndexSnapshot): PersistedFolderSnapshot {
+  const timestamp = new Date().toISOString();
+  const folders: FolderNode[] = raw.albums.map((album, position) => ({
+    id: album.id,
+    type: "album",
+    name: album.name,
+    parentId: null,
+    position,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }));
+
+  const memberships: FolderMembership[] = [];
+
+  for (const item of raw.items) {
+    for (const folderId of item.albumIds) {
+      memberships.push({
+        folderId,
+        itemId: item.id,
+        addedAt: item.uploadedAt,
+      });
+    }
+  }
+
+  return {
+    version: 1,
+    updatedAt: timestamp,
+    folders,
+    memberships,
+  };
+}
+
+async function readSnapshotMessage(
+  channelId: string,
+  fileNames: string[],
+): Promise<{ attachmentUrl: string; fileName: string } | null> {
+  const channel = await getGuildTextChannel(channelId);
+  const messages = await channel.messages.fetch({ limit: 100 });
+  const orderedMessages = [...messages.values()].sort((left, right) => right.createdTimestamp - left.createdTimestamp);
+
+  for (const message of orderedMessages) {
+    const attachment = [...message.attachments.values()].find((entry) => fileNames.includes(entry.name ?? ""));
+    if (attachment) {
+      return {
+        attachmentUrl: attachment.url,
+        fileName: attachment.name ?? fileNames[0] ?? "snapshot.json",
+      };
+    }
+  }
+
+  return null;
+}
+
+async function readJsonSnapshot(channelId: string, fileNames: string[]): Promise<{ payload: unknown; fileName: string } | null> {
+  const found = await readSnapshotMessage(channelId, fileNames);
+  if (!found) {
+    return null;
+  }
+
+  const response = await fetch(found.attachmentUrl);
+  if (!response.ok) {
+    return null;
+  }
+
+  try {
+    return {
+      payload: JSON.parse(await response.text()) as unknown,
+      fileName: found.fileName,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function writeSnapshotToChannel(
+  channelId: string,
+  fileName: string,
+  content: string,
+  label: string,
+  cleanupFileNames: string[] = [fileName],
+): Promise<void> {
+  const channel = await getGuildTextChannel(channelId);
+  const existingMessages = await channel.messages.fetch({ limit: 100 });
+  const staleMessages = [...existingMessages.values()].filter((message) =>
+    [...message.attachments.values()].some((attachment) => cleanupFileNames.includes(attachment.name ?? "")),
+  );
+
+  await channel.send({
+    content: `${label} ${new Date().toISOString()}`,
+    files: [
+      {
+        attachment: Buffer.from(content, "utf8"),
+        name: fileName,
+      },
+    ],
+  });
+
+  for (const message of staleMessages) {
+    try {
+      await message.delete();
+    } catch {
+      // Ignore stale cleanup failures so the latest snapshot still wins.
+    }
+  }
+}
+
 export async function listEligibleGuilds(accessToken?: string): Promise<GuildSummary[]> {
   if (env.mockMode) {
     return [
@@ -290,8 +478,12 @@ export async function initializeDiscasaInGuild(guildId: string): Promise<ActiveS
       driveChannelName: DISCASA_CHANNELS[0],
       indexChannelId: "mock-index",
       indexChannelName: DISCASA_CHANNELS[1],
+      folderChannelId: "mock-folder",
+      folderChannelName: DISCASA_CHANNELS[2],
       trashChannelId: "mock-trash",
-      trashChannelName: DISCASA_CHANNELS[2],
+      trashChannelName: DISCASA_CHANNELS[3],
+      configChannelId: "mock-config",
+      configChannelName: DISCASA_CHANNELS[4],
     };
   }
 
@@ -346,9 +538,11 @@ export async function initializeDiscasaInGuild(guildId: string): Promise<ActiveS
 
   const driveChannel = resolvedChannels.get(DISCASA_CHANNELS[0]);
   const indexChannel = resolvedChannels.get(DISCASA_CHANNELS[1]);
-  const trashChannel = resolvedChannels.get(DISCASA_CHANNELS[2]);
+  const folderChannel = resolvedChannels.get(DISCASA_CHANNELS[2]);
+  const trashChannel = resolvedChannels.get(DISCASA_CHANNELS[3]);
+  const configChannel = resolvedChannels.get(DISCASA_CHANNELS[4]);
 
-  if (!driveChannel || !indexChannel || !trashChannel) {
+  if (!driveChannel || !indexChannel || !folderChannel || !trashChannel || !configChannel) {
     throw new Error("Discasa storage channels could not be resolved.");
   }
 
@@ -361,8 +555,12 @@ export async function initializeDiscasaInGuild(guildId: string): Promise<ActiveS
     driveChannelName: driveChannel.name,
     indexChannelId: indexChannel.id,
     indexChannelName: indexChannel.name,
+    folderChannelId: folderChannel.id,
+    folderChannelName: folderChannel.name,
     trashChannelId: trashChannel.id,
     trashChannelName: trashChannel.name,
+    configChannelId: configChannel.id,
+    configChannelName: configChannel.name,
   };
 }
 
@@ -400,6 +598,30 @@ export async function uploadFilesToDiscordDrive(
   return uploaded;
 }
 
+export async function hasCurrentIndexSnapshot(context: ActiveStorageContext): Promise<boolean> {
+  if (env.mockMode) {
+    return false;
+  }
+
+  return Boolean(await readSnapshotMessage(context.indexChannelId, [INDEX_SNAPSHOT_FILENAME]));
+}
+
+export async function hasCurrentFolderSnapshot(context: ActiveStorageContext): Promise<boolean> {
+  if (env.mockMode) {
+    return false;
+  }
+
+  return Boolean(await readSnapshotMessage(context.folderChannelId, [FOLDER_SNAPSHOT_FILENAME]));
+}
+
+export async function hasCurrentConfigSnapshot(context: ActiveStorageContext): Promise<boolean> {
+  if (env.mockMode) {
+    return false;
+  }
+
+  return Boolean(await readSnapshotMessage(context.configChannelId, [CONFIG_SNAPSHOT_FILENAME]));
+}
+
 export async function readLatestIndexSnapshot(
   context: ActiveStorageContext,
 ): Promise<PersistedIndexSnapshot | null> {
@@ -407,29 +629,52 @@ export async function readLatestIndexSnapshot(
     return null;
   }
 
-  const channel = await getGuildTextChannel(context.indexChannelId);
-  const messages = await channel.messages.fetch({ limit: 100 });
-  const orderedMessages = [...messages.values()].sort((left, right) => right.createdTimestamp - left.createdTimestamp);
+  const found = await readJsonSnapshot(context.indexChannelId, [INDEX_SNAPSHOT_FILENAME, LEGACY_INDEX_SNAPSHOT_FILENAME]);
+  if (!found) {
+    return null;
+  }
 
-  for (const message of orderedMessages) {
-    const attachment = [...message.attachments.values()].find((entry) => entry.name === INDEX_SNAPSHOT_FILENAME);
-    if (!attachment) {
-      continue;
-    }
+  if (isIndexSnapshot(found.payload)) {
+    return found.payload;
+  }
 
-    const response = await fetch(attachment.url);
-    if (!response.ok) {
-      continue;
-    }
+  if (isLegacyIndexSnapshot(found.payload)) {
+    return convertLegacyIndexToCurrent(found.payload);
+  }
 
-    try {
-      const parsed = JSON.parse(await response.text()) as PersistedIndexSnapshot;
-      if (parsed && parsed.version === 1 && Array.isArray(parsed.albums) && Array.isArray(parsed.items)) {
-        return parsed;
-      }
-    } catch {
-      // Ignore malformed snapshots and continue scanning older ones.
-    }
+  return null;
+}
+
+export async function readLatestFolderSnapshot(
+  context: ActiveStorageContext,
+): Promise<PersistedFolderSnapshot | null> {
+  if (env.mockMode) {
+    return null;
+  }
+
+  const current = await readJsonSnapshot(context.folderChannelId, [FOLDER_SNAPSHOT_FILENAME]);
+  if (current && isFolderSnapshot(current.payload)) {
+    return current.payload;
+  }
+
+  const legacy = await readJsonSnapshot(context.indexChannelId, [LEGACY_INDEX_SNAPSHOT_FILENAME]);
+  if (legacy && isLegacyIndexSnapshot(legacy.payload)) {
+    return deriveFolderSnapshotFromLegacyIndex(legacy.payload);
+  }
+
+  return null;
+}
+
+export async function readLatestConfigSnapshot(
+  context: ActiveStorageContext,
+): Promise<PersistedConfigSnapshot | null> {
+  if (env.mockMode) {
+    return null;
+  }
+
+  const current = await readJsonSnapshot(context.configChannelId, [CONFIG_SNAPSHOT_FILENAME]);
+  if (current && isConfigSnapshot(current.payload)) {
+    return current.payload;
   }
 
   return null;
@@ -443,18 +688,47 @@ export async function syncIndexSnapshot(
     return;
   }
 
-  const channel = await getGuildTextChannel(context.indexChannelId);
-  const payload = Buffer.from(JSON.stringify(snapshot, null, 2), "utf8");
+  await writeSnapshotToChannel(
+    context.indexChannelId,
+    INDEX_SNAPSHOT_FILENAME,
+    JSON.stringify(snapshot, null, 2),
+    "Discasa index snapshot",
+    [INDEX_SNAPSHOT_FILENAME, LEGACY_INDEX_SNAPSHOT_FILENAME],
+  );
+}
 
-  await channel.send({
-    content: `Discasa index snapshot ${new Date().toISOString()}`,
-    files: [
-      {
-        attachment: payload,
-        name: INDEX_SNAPSHOT_FILENAME,
-      },
-    ],
-  });
+export async function syncFolderSnapshot(
+  context: ActiveStorageContext,
+  snapshot: PersistedFolderSnapshot,
+): Promise<void> {
+  if (env.mockMode) {
+    return;
+  }
+
+  await writeSnapshotToChannel(
+    context.folderChannelId,
+    FOLDER_SNAPSHOT_FILENAME,
+    JSON.stringify(snapshot, null, 2),
+    "Discasa folder snapshot",
+    [FOLDER_SNAPSHOT_FILENAME],
+  );
+}
+
+export async function syncConfigSnapshot(
+  context: ActiveStorageContext,
+  snapshot: PersistedConfigSnapshot,
+): Promise<void> {
+  if (env.mockMode) {
+    return;
+  }
+
+  await writeSnapshotToChannel(
+    context.configChannelId,
+    CONFIG_SNAPSHOT_FILENAME,
+    JSON.stringify(snapshot, null, 2),
+    "Discasa config snapshot",
+    [CONFIG_SNAPSHOT_FILENAME],
+  );
 }
 
 export async function moveStoredItemToTrash(

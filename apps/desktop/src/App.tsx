@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
-import type { AlbumRecord, GuildSummary, LibraryItem } from "@discasa/shared";
+import { DISCASA_DEFAULT_CONFIG, type AlbumRecord, type DiscasaConfig, type GuildSummary, type LibraryItem } from "@discasa/shared";
 import {
   createAlbum,
   deleteAlbum,
   deleteLibraryItem,
   getAlbums,
+  getAppConfig,
   getGuilds,
   getLibraryItems,
   getSession,
@@ -18,6 +19,7 @@ import {
   reorderAlbums,
   restoreFromTrash,
   toggleFavorite,
+  updateAppConfig,
   uploadFiles,
 } from "./lib/api";
 import logoUrl from "./assets/discasa-logo.png";
@@ -42,10 +44,10 @@ const SELECTED_GUILD_KEY = "discasa.discord.selectedGuildId";
 const ACTIVE_GUILD_ID_KEY = "discasa.discord.activeGuildId";
 const ACTIVE_GUILD_NAME_KEY = "discasa.discord.activeGuildName";
 const THUMBNAIL_ZOOM_KEY = "discasa.library.thumbnailZoomPercent";
-const DEFAULT_ACCENT_HEX = "#E9881D";
+const DEFAULT_ACCENT_HEX = DISCASA_DEFAULT_CONFIG.accentColor;
 const THUMBNAIL_BASE_SIZE = 400;
 const THUMBNAIL_ZOOM_LEVELS = [20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80] as const;
-const DEFAULT_THUMBNAIL_ZOOM_PERCENT = 35;
+const DEFAULT_THUMBNAIL_ZOOM_PERCENT = DISCASA_DEFAULT_CONFIG.thumbnailZoomPercent;
 
 function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -407,6 +409,35 @@ export function App() {
     };
   }, []);
 
+  function applyRemoteConfig(nextConfig: DiscasaConfig): void {
+    const normalizedAccent = normalizeHexColor(nextConfig.accentColor) ?? DEFAULT_ACCENT_HEX;
+    setIsSidebarCollapsed(nextConfig.sidebarCollapsed);
+    setMinimizeToTray(nextConfig.minimizeToTray);
+    setCloseToTray(nextConfig.closeToTray);
+    setAccentColor(normalizedAccent);
+    setAccentInput(normalizedAccent);
+    setAccentInputError("");
+    setThumbnailZoomIndex(getClosestThumbnailZoomIndex(nextConfig.thumbnailZoomPercent));
+  }
+
+  async function loadRemoteConfig(): Promise<void> {
+    const nextConfig = await getAppConfig();
+    applyRemoteConfig(nextConfig);
+  }
+
+  async function persistConfigPatch(patch: Partial<DiscasaConfig>): Promise<void> {
+    if (!activeGuildId) {
+      return;
+    }
+
+    try {
+      const nextConfig = await updateAppConfig(patch);
+      applyRemoteConfig(nextConfig);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not save the settings.");
+    }
+  }
+
   function syncGuildSelection(nextGuilds: GuildSummary[]): void {
     setSelectedGuildId((current) => {
       if (current && nextGuilds.some((guild) => guild.id === current)) {
@@ -455,6 +486,12 @@ export function App() {
       setSessionAvatarUrl(session.user?.avatarUrl ?? null);
       setAlbums(nextAlbums);
       setItems(nextItems);
+
+      try {
+        await loadRemoteConfig();
+      } catch {
+        // Keep local defaults when cloud settings are unavailable.
+      }
 
       if (session.authenticated) {
         await loadEligibleGuilds();
@@ -821,6 +858,13 @@ export function App() {
       const guildName = guilds.find((guild) => guild.id === selectedGuildId)?.name ?? "Selected server";
       setActiveGuildId(result.guildId);
       setActiveGuildName(guildName);
+
+      try {
+        await loadRemoteConfig();
+      } catch {
+        // Keep defaults if the selected server has no saved config yet.
+      }
+
       setMessage(`Discasa applied to ${guildName}.`);
       setError("");
     } catch (caughtError) {
@@ -899,6 +943,29 @@ export function App() {
     }
   }
 
+  function handleToggleSidebar(): void {
+    const nextCollapsed = !isSidebarCollapsed;
+    setIsSidebarCollapsed(nextCollapsed);
+    void persistConfigPatch({ sidebarCollapsed: nextCollapsed });
+  }
+
+  function handleChangeMinimizeToTray(nextValue: boolean): void {
+    setMinimizeToTray(nextValue);
+    void persistConfigPatch({ minimizeToTray: nextValue });
+  }
+
+  function handleChangeCloseToTray(nextValue: boolean): void {
+    setCloseToTray(nextValue);
+    void persistConfigPatch({ closeToTray: nextValue });
+  }
+
+  function handleThumbnailZoomIndexChange(nextIndex: number): void {
+    const clampedIndex = clampNumber(nextIndex, 0, THUMBNAIL_ZOOM_LEVELS.length - 1);
+    setThumbnailZoomIndex(clampedIndex);
+    const nextPercent = THUMBNAIL_ZOOM_LEVELS[clampedIndex] ?? DEFAULT_THUMBNAIL_ZOOM_PERCENT;
+    void persistConfigPatch({ thumbnailZoomPercent: nextPercent });
+  }
+
   function handleAccentInputChange(nextValue: string): void {
     const uppercased = nextValue.toUpperCase();
     setAccentInput(uppercased);
@@ -907,6 +974,7 @@ export function App() {
     if (normalized) {
       setAccentColor(normalized);
       setAccentInputError("");
+      void persistConfigPatch({ accentColor: normalized });
       return;
     }
 
@@ -924,6 +992,7 @@ export function App() {
       setAccentColor(normalized);
       setAccentInput(normalized);
       setAccentInputError("");
+      void persistConfigPatch({ accentColor: normalized });
       return;
     }
 
@@ -1048,7 +1117,7 @@ export function App() {
             selectedView={selectedView}
             isSidebarCollapsed={isSidebarCollapsed}
             profile={profile}
-            onToggleSidebar={() => setIsSidebarCollapsed((current) => !current)}
+            onToggleSidebar={handleToggleSidebar}
             onOpenView={openLibraryView}
             onOpenCreateAlbum={openCreateAlbumModal}
             onOpenAlbumContextMenu={handleAlbumContextMenu}
@@ -1065,9 +1134,7 @@ export function App() {
             thumbnailZoomIndex={thumbnailZoomIndex}
             thumbnailZoomLevelCount={THUMBNAIL_ZOOM_LEVELS.length}
             thumbnailZoomPercent={thumbnailZoomPercent}
-            onThumbnailZoomIndexChange={(nextIndex) =>
-              setThumbnailZoomIndex(clampNumber(nextIndex, 0, THUMBNAIL_ZOOM_LEVELS.length - 1))
-            }
+            onThumbnailZoomIndexChange={handleThumbnailZoomIndexChange}
             onSelectItem={handleSelectItem}
             onClearSelection={handleClearSelectedItems}
             onApplySelectionRect={handleApplySelectionRect}
@@ -1162,8 +1229,8 @@ export function App() {
           onApplyGuild={() => {
             void handleApplySelectedGuild();
           }}
-          onChangeMinimizeToTray={setMinimizeToTray}
-          onChangeCloseToTray={setCloseToTray}
+          onChangeMinimizeToTray={handleChangeMinimizeToTray}
+          onChangeCloseToTray={handleChangeCloseToTray}
           onAccentInputChange={handleAccentInputChange}
           onAccentInputBlur={handleAccentInputBlur}
         />
