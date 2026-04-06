@@ -36,6 +36,10 @@ const CLOSE_TO_TRAY_KEY = "discasa.window.closeToTray";
 const ACCENT_COLOR_KEY = "discasa.ui.accentColor";
 const DEFAULT_ACCENT_HEX = "#E9881D";
 
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 function readStoredBoolean(key: string, fallback: boolean): boolean {
   if (typeof window === "undefined") return fallback;
   const raw = window.localStorage.getItem(key);
@@ -706,6 +710,11 @@ export function App() {
     event.stopPropagation();
     dragDepthRef.current = 0;
     setIsDraggingFiles(false);
+
+    if (isTauriRuntime()) {
+      return;
+    }
+
     await handleFiles(event.dataTransfer.files);
   }
 
