@@ -9,9 +9,31 @@ type PersistedAlbum = {
   name: string;
 };
 
+export type ActiveStorageContext = {
+  guildId: string;
+  guildName: string;
+  categoryId: string;
+  categoryName: string;
+  driveChannelId: string;
+  driveChannelName: string;
+  indexChannelId: string;
+  indexChannelName: string;
+  trashChannelId: string;
+  trashChannelName: string;
+};
+
+export type UploadedFileRecord = {
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  guildId: string;
+  attachmentUrl: string;
+};
+
 type MockDatabase = {
   albums: PersistedAlbum[];
   items: LibraryItem[];
+  activeStorage: ActiveStorageContext | null;
 };
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,7 +49,29 @@ function createDefaultDatabase(): MockDatabase {
   return {
     albums: [],
     items: [],
+    activeStorage: null,
   };
+}
+
+function isValidActiveStorage(raw: unknown): raw is ActiveStorageContext {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+
+  const entry = raw as Record<string, unknown>;
+
+  return [
+    "guildId",
+    "guildName",
+    "categoryId",
+    "categoryName",
+    "driveChannelId",
+    "driveChannelName",
+    "indexChannelId",
+    "indexChannelName",
+    "trashChannelId",
+    "trashChannelName",
+  ].every((key) => typeof entry[key] === "string" && String(entry[key]).length > 0);
 }
 
 function normalizeDatabase(raw: Partial<MockDatabase> | null | undefined): MockDatabase {
@@ -43,9 +87,12 @@ function normalizeDatabase(raw: Partial<MockDatabase> | null | undefined): MockD
     ? raw.items.filter((entry): entry is LibraryItem => Boolean(entry && typeof entry.id === "string" && typeof entry.name === "string"))
     : fallback.items;
 
+  const activeStorage = isValidActiveStorage(raw?.activeStorage) ? raw.activeStorage : fallback.activeStorage;
+
   return {
     albums,
     items,
+    activeStorage,
   };
 }
 
@@ -84,6 +131,15 @@ function toAlbumRecord(album: PersistedAlbum): AlbumRecord {
     name: album.name,
     itemCount: database.items.filter((item) => item.albumIds.includes(album.id) && !item.isTrashed).length,
   };
+}
+
+export function getActiveStorageContext(): ActiveStorageContext | null {
+  return database.activeStorage;
+}
+
+export function setActiveStorageContext(nextContext: ActiveStorageContext | null): void {
+  database.activeStorage = nextContext;
+  saveDatabase();
 }
 
 export function getAlbums(): AlbumRecord[] {
@@ -163,6 +219,26 @@ export function addMockFiles(files: Express.Multer.File[], albumId?: string): Li
     albumIds: albumId ? [albumId] : [],
     uploadedAt: new Date().toISOString(),
     attachmentUrl: `mock://uploads/${encodeURIComponent(file.originalname)}`,
+    isFavorite: false,
+    isTrashed: false,
+  } satisfies LibraryItem));
+
+  database.items.unshift(...created);
+  saveDatabase();
+  return created;
+}
+
+export function addUploadedFiles(files: UploadedFileRecord[], albumId?: string): LibraryItem[] {
+  const created = files.map((file) => ({
+    id: nanoid(12),
+    name: file.fileName,
+    size: file.fileSize,
+    mimeType: file.mimeType || "application/octet-stream",
+    status: "stored",
+    guildId: file.guildId,
+    albumIds: albumId ? [albumId] : [],
+    uploadedAt: new Date().toISOString(),
+    attachmentUrl: file.attachmentUrl,
     isFavorite: false,
     isTrashed: false,
   } satisfies LibraryItem));

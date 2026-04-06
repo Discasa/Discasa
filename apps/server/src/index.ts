@@ -8,9 +8,11 @@ import { env } from "./lib/env";
 declare module "express-session" {
   interface SessionData {
     authenticated?: boolean;
+    accessToken?: string;
     user?: {
       id: string;
       username: string;
+      avatarUrl?: string | null;
     };
   }
 }

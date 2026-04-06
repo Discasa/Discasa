@@ -3,38 +3,79 @@ import multer from "multer";
 import {
   addAlbum,
   addMockFiles,
+  addUploadedFiles,
   deleteAlbum,
   deleteLibraryItem,
+  getActiveStorageContext,
   getAlbums,
   getLibraryItems,
   renameAlbum,
   restoreLibraryItem,
   reorderAlbums,
+  setActiveStorageContext,
   toggleFavoriteState,
   trashLibraryItem,
 } from "../lib/store";
-import { initializeDiscasaInGuild, listEligibleGuilds } from "../services/discordService";
+import { env } from "../lib/env";
+import {
+  initializeDiscasaInGuild,
+  listEligibleGuilds,
+  uploadFilesToDiscordDrive,
+} from "../services/discordService";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.get("/session", (request, response) => {
-  const authenticated = Boolean(request.session.authenticated);
+async function resolveActiveStorage(accessToken?: string) {
+  const current = getActiveStorageContext();
+  if (current) {
+    return current;
+  }
+
+  if (!accessToken) {
+    throw new Error("Connect your Discord account before uploading files.");
+  }
+
+  const eligibleGuilds = await listEligibleGuilds(accessToken);
+  if (!eligibleGuilds.length) {
+    throw new Error("No eligible Discord server was found. Add the bot to a server you own or manage first.");
+  }
+
+  const initialized = await initializeDiscasaInGuild(eligibleGuilds[0].id);
+  setActiveStorageContext(initialized);
+  return initialized;
+}
+
+router.get("/session", (_request, response) => {
+  const authenticated = Boolean(_request.session.authenticated);
+  const activeStorage = getActiveStorageContext();
 
   response.json({
     authenticated,
     user: authenticated
-      ? request.session.user ?? {
+      ? _request.session.user ?? {
           id: "mock_user",
           username: "Mock User",
+          avatarUrl: null,
+        }
+      : null,
+    activeGuild: activeStorage
+      ? {
+          id: activeStorage.guildId,
+          name: activeStorage.guildName,
         }
       : null,
   });
 });
 
-router.get("/guilds", async (_request, response, next) => {
+router.get("/guilds", async (request, response, next) => {
   try {
-    const guilds = await listEligibleGuilds();
+    if (!env.mockMode && !request.session.accessToken) {
+      response.status(401).json({ error: "Connect your Discord account first." });
+      return;
+    }
+
+    const guilds = await listEligibleGuilds(request.session.accessToken);
     response.json(guilds);
   } catch (error) {
     next(error);
@@ -50,8 +91,19 @@ router.post("/discasa/initialize", async (request, response, next) => {
       return;
     }
 
+    if (!env.mockMode && !request.session.accessToken) {
+      response.status(401).json({ error: "Connect your Discord account first." });
+      return;
+    }
+
     const result = await initializeDiscasaInGuild(guildId);
-    response.json(result);
+    setActiveStorageContext(result);
+
+    response.json({
+      guildId: result.guildId,
+      categoryName: result.categoryName,
+      channels: [result.driveChannelName, result.indexChannelName, result.trashChannelName],
+    });
   } catch (error) {
     next(error);
   }
@@ -127,17 +179,34 @@ router.get("/library", (_request, response) => {
   response.json(getLibraryItems());
 });
 
-router.post("/upload", upload.array("files"), (request, response) => {
-  const files = request.files as Express.Multer.File[] | undefined;
-  const albumId = typeof request.body.albumId === "string" && request.body.albumId.length > 0 ? request.body.albumId : undefined;
+router.post("/upload", upload.array("files"), async (request, response, next) => {
+  try {
+    const files = request.files as Express.Multer.File[] | undefined;
+    const albumId = typeof request.body.albumId === "string" && request.body.albumId.length > 0 ? request.body.albumId : undefined;
 
-  if (!files?.length) {
-    response.status(400).json({ error: "At least one file is required" });
-    return;
+    if (!files?.length) {
+      response.status(400).json({ error: "At least one file is required" });
+      return;
+    }
+
+    if (env.mockMode) {
+      const uploaded = addMockFiles(files, albumId);
+      response.status(201).json({ uploaded });
+      return;
+    }
+
+    if (!request.session.accessToken) {
+      response.status(401).json({ error: "Connect your Discord account before uploading files." });
+      return;
+    }
+
+    const activeStorage = await resolveActiveStorage(request.session.accessToken);
+    const uploadedFiles = await uploadFilesToDiscordDrive(files, activeStorage);
+    const uploaded = addUploadedFiles(uploadedFiles, albumId);
+    response.status(201).json({ uploaded });
+  } catch (error) {
+    next(error);
   }
-
-  const uploaded = addMockFiles(files, albumId);
-  response.status(201).json({ uploaded });
 });
 
 router.patch("/library/:itemId/favorite", (request, response) => {
@@ -187,4 +256,5 @@ router.delete("/library/:itemId", (request, response) => {
 
   response.json({ deleted: true });
 });
+
 export { router as apiRouter };

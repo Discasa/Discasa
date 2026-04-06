@@ -15,6 +15,10 @@ export type AppSession = {
     username: string;
     avatarUrl?: string | null;
   } | null;
+  activeGuild: {
+    id: string;
+    name: string;
+  } | null;
 };
 
 export type DiscasaInitializationResponse = {
