@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
-import { DISCASA_DEFAULT_CONFIG, type AlbumRecord, type DiscasaConfig, type GuildSummary, type LibraryItem } from "@discasa/shared";
+import {
+  DISCASA_DEFAULT_CONFIG,
+  type AlbumRecord,
+  type AppSession,
+  type DiscasaConfig,
+  type GuildSummary,
+  type LibraryItem,
+} from "@discasa/shared";
 import {
   createAlbum,
   deleteAlbum,
@@ -25,6 +32,7 @@ import {
 import logoUrl from "./assets/discasa-logo.png";
 import { AlbumContextMenu } from "./components/AlbumContextMenu";
 import { AlbumModal } from "./components/AlbumModal";
+import { AuthSetupModal, type AuthSetupStep } from "./components/AuthSetupModal";
 import { DeleteAlbumModal } from "./components/DeleteAlbumModal";
 import { DeleteFileModal } from "./components/DeleteFileModal";
 import { LibraryPanel } from "./components/LibraryPanel";
@@ -137,6 +145,18 @@ function tintHexColor(hex: string, amount: number): string {
   return `#${tinted.join("").toUpperCase()}`;
 }
 
+function getRequiredAuthSetupStep(session: AppSession): AuthSetupStep | null {
+  if (!session.authenticated) {
+    return "login";
+  }
+
+  if (!session.activeGuild) {
+    return "select-server";
+  }
+
+  return null;
+}
+
 export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCreateAlbumOpen, setIsCreateAlbumOpen] = useState(false);
@@ -156,6 +176,8 @@ export function App() {
   const [isLoadingGuilds, setIsLoadingGuilds] = useState(false);
   const [isApplyingGuild, setIsApplyingGuild] = useState(false);
   const [discordSettingsError, setDiscordSettingsError] = useState("");
+  const [authSetupStep, setAuthSetupStep] = useState<AuthSetupStep | null>(null);
+  const [authSetupError, setAuthSetupError] = useState("");
   const [albums, setAlbums] = useState<AlbumRecord[]>([]);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [selectedView, setSelectedView] = useState<SidebarView>({ kind: "library", id: "all-files" });
@@ -409,6 +431,51 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (authSetupStep !== "waiting") {
+      return;
+    }
+
+    let disposed = false;
+
+    const pollSession = async () => {
+      try {
+        const session = await getSession();
+        if (disposed || !session.authenticated) {
+          return;
+        }
+
+        setSessionName(session.user?.username ?? null);
+        setSessionAvatarUrl(session.user?.avatarUrl ?? null);
+        setActiveGuildId(session.activeGuild?.id ?? "");
+        setActiveGuildName(session.activeGuild?.name ?? null);
+        setAuthSetupError("");
+
+        if (session.activeGuild) {
+          await bootstrap();
+          return;
+        }
+
+        await loadEligibleGuilds(session.activeGuild?.id ?? undefined);
+        if (!disposed) {
+          setAuthSetupStep("select-server");
+        }
+      } catch {
+        // Keep waiting until the browser flow completes or the user goes back.
+      }
+    };
+
+    void pollSession();
+    const timer = window.setInterval(() => {
+      void pollSession();
+    }, 1200);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [authSetupStep]);
+
   function applyRemoteConfig(nextConfig: DiscasaConfig): void {
     const normalizedAccent = normalizeHexColor(nextConfig.accentColor) ?? DEFAULT_ACCENT_HEX;
     setIsSidebarCollapsed(nextConfig.sidebarCollapsed);
@@ -438,10 +505,14 @@ export function App() {
     }
   }
 
-  function syncGuildSelection(nextGuilds: GuildSummary[]): void {
+  function syncGuildSelection(nextGuilds: GuildSummary[], preferredGuildId?: string): void {
     setSelectedGuildId((current) => {
       if (current && nextGuilds.some((guild) => guild.id === current)) {
         return current;
+      }
+
+      if (preferredGuildId && nextGuilds.some((guild) => guild.id === preferredGuildId)) {
+        return preferredGuildId;
       }
 
       if (activeGuildId && nextGuilds.some((guild) => guild.id === activeGuildId)) {
@@ -451,25 +522,27 @@ export function App() {
       return nextGuilds[0]?.id ?? "";
     });
 
-    if (activeGuildId) {
-      const matchedGuild = nextGuilds.find((guild) => guild.id === activeGuildId);
-      if (matchedGuild) {
-        setActiveGuildName(matchedGuild.name);
-      }
+    const matchedGuild = nextGuilds.find((guild) => guild.id === preferredGuildId || guild.id === activeGuildId);
+    if (matchedGuild) {
+      setActiveGuildName(matchedGuild.name);
     }
   }
 
-  async function loadEligibleGuilds(): Promise<void> {
+  async function loadEligibleGuilds(preferredGuildId?: string): Promise<GuildSummary[]> {
     setIsLoadingGuilds(true);
     setDiscordSettingsError("");
 
     try {
       const nextGuilds = await getGuilds();
       setGuilds(nextGuilds);
-      syncGuildSelection(nextGuilds);
+      syncGuildSelection(nextGuilds, preferredGuildId);
+      return nextGuilds;
     } catch (caughtError) {
+      const nextError = caughtError instanceof Error ? caughtError.message : "Could not load the Discord server list.";
       setGuilds([]);
-      setDiscordSettingsError(caughtError instanceof Error ? caughtError.message : "Could not load the Discord server list.");
+      setDiscordSettingsError(nextError);
+      setAuthSetupError(nextError);
+      return [];
     } finally {
       setIsLoadingGuilds(false);
     }
@@ -484,6 +557,8 @@ export function App() {
 
       setSessionName(session.user?.username ?? null);
       setSessionAvatarUrl(session.user?.avatarUrl ?? null);
+      setActiveGuildId(session.activeGuild?.id ?? "");
+      setActiveGuildName(session.activeGuild?.name ?? null);
       setAlbums(nextAlbums);
       setItems(nextItems);
 
@@ -494,10 +569,13 @@ export function App() {
       }
 
       if (session.authenticated) {
-        await loadEligibleGuilds();
+        await loadEligibleGuilds(session.activeGuild?.id ?? undefined);
       } else {
         setGuilds([]);
       }
+
+      setAuthSetupError("");
+      setAuthSetupStep(getRequiredAuthSetupStep(session));
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Failed to load Discasa preview.");
     } finally {
@@ -518,6 +596,10 @@ export function App() {
   const visibleItemIds = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
   const currentTitle = useMemo(() => getCurrentTitle(selectedView, albums), [albums, selectedView]);
   const currentDescription = useMemo(() => getCurrentDescription(selectedView), [selectedView]);
+  const selectedGuildName = useMemo(
+    () => guilds.find((guild) => guild.id === selectedGuildId)?.name ?? null,
+    [guilds, selectedGuildId],
+  );
 
   useEffect(() => {
     setSelectedItemIds([]);
@@ -638,7 +720,7 @@ export function App() {
     setIsSettingsOpen(true);
 
     if (sessionName && !guilds.length && !isLoadingGuilds) {
-      void loadEligibleGuilds();
+      void loadEligibleGuilds(activeGuildId || undefined);
     }
   }
 
@@ -844,34 +926,76 @@ export function App() {
     }
   }
 
+  async function applyGuildSelection(guildIdToApply: string, successMessage?: string): Promise<void> {
+    const nextGuildName = guilds.find((guild) => guild.id === guildIdToApply)?.name ?? "Selected server";
+
+    try {
+      setIsApplyingGuild(true);
+      setDiscordSettingsError("");
+      setAuthSetupError("");
+      await initializeDiscasa(guildIdToApply);
+      setSelectedGuildId(guildIdToApply);
+      setActiveGuildId(guildIdToApply);
+      setActiveGuildName(nextGuildName);
+      setMessage(successMessage ?? `Discasa applied to ${nextGuildName}.`);
+      setError("");
+      await bootstrap();
+      setAuthSetupStep(null);
+    } catch (caughtError) {
+      const nextError = caughtError instanceof Error ? caughtError.message : "Could not apply the selected server.";
+      setDiscordSettingsError(nextError);
+      setAuthSetupError(nextError);
+    } finally {
+      setIsApplyingGuild(false);
+    }
+  }
+
   async function handleApplySelectedGuild(): Promise<void> {
     if (!selectedGuildId) {
       setDiscordSettingsError("Select a server first.");
       return;
     }
 
-    setIsApplyingGuild(true);
+    await applyGuildSelection(selectedGuildId);
+  }
+
+  async function handleOpenDiscordLoginFlow(): Promise<void> {
+    setIsSettingsOpen(false);
     setDiscordSettingsError("");
+    setAuthSetupError("");
+    setAuthSetupStep("waiting");
 
     try {
-      const result = await initializeDiscasa(selectedGuildId);
-      const guildName = guilds.find((guild) => guild.id === selectedGuildId)?.name ?? "Selected server";
-      setActiveGuildId(result.guildId);
-      setActiveGuildName(guildName);
-
-      try {
-        await loadRemoteConfig();
-      } catch {
-        // Keep defaults if the selected server has no saved config yet.
-      }
-
-      setMessage(`Discasa applied to ${guildName}.`);
-      setError("");
+      await openDiscordLogin();
     } catch (caughtError) {
-      setDiscordSettingsError(caughtError instanceof Error ? caughtError.message : "Could not apply the selected server.");
-    } finally {
-      setIsApplyingGuild(false);
+      const nextError = caughtError instanceof Error ? caughtError.message : "Could not open the Discord login in the browser.";
+      setAuthSetupError(nextError);
+      setAuthSetupStep("login");
     }
+  }
+
+  async function handleRefreshGuildSetup(): Promise<void> {
+    setAuthSetupError("");
+    await loadEligibleGuilds(activeGuildId || undefined);
+  }
+
+  function handleConfirmSetupGuildSelection(): void {
+    if (!selectedGuildId) {
+      setAuthSetupError("Select a server first.");
+      return;
+    }
+
+    setAuthSetupError("");
+    setAuthSetupStep("apply-server");
+  }
+
+  async function handleApplyGuildFromSetup(): Promise<void> {
+    if (!selectedGuildId) {
+      setAuthSetupError("Select a server first.");
+      return;
+    }
+
+    await applyGuildSelection(selectedGuildId, `Discasa applied to ${selectedGuildName ?? "the selected server"}.`);
   }
 
   function handleOpenDiscordBotInstall(): void {
@@ -1163,6 +1287,40 @@ export function App() {
         }}
       />
 
+      {authSetupStep ? (
+        <AuthSetupModal
+          step={authSetupStep}
+          guilds={guilds}
+          selectedGuildId={selectedGuildId}
+          selectedGuildName={selectedGuildName}
+          error={authSetupError}
+          isLoadingGuilds={isLoadingGuilds}
+          isApplyingGuild={isApplyingGuild}
+          onStartLogin={() => {
+            void handleOpenDiscordLoginFlow();
+          }}
+          onSelectGuild={(guildId) => {
+            setSelectedGuildId(guildId);
+            setAuthSetupError("");
+          }}
+          onConfirmGuild={handleConfirmSetupGuildSelection}
+          onBackToLogin={() => {
+            setAuthSetupError("");
+            setAuthSetupStep("login");
+          }}
+          onBackToServerSelection={() => {
+            setAuthSetupError("");
+            setAuthSetupStep("select-server");
+          }}
+          onRetryGuilds={() => {
+            void handleRefreshGuildSetup();
+          }}
+          onApplyGuild={() => {
+            void handleApplyGuildFromSetup();
+          }}
+        />
+      ) : null}
+
       {isCreateAlbumOpen ? (
         <AlbumModal
           isCreatingAlbum={isCreatingAlbum}
@@ -1218,7 +1376,9 @@ export function App() {
           accentInputError={accentInputError}
           onClose={() => setIsSettingsOpen(false)}
           onSelectSection={setSettingsSection}
-          onOpenDiscordLogin={openDiscordLogin}
+          onOpenDiscordLogin={() => {
+            void handleOpenDiscordLoginFlow();
+          }}
           onOpenDiscordBotInstall={handleOpenDiscordBotInstall}
           onSelectGuild={(guildId) => {
             setSelectedGuildId(guildId);

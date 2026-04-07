@@ -159,8 +159,8 @@ export async function deleteLibraryItem(itemId: string): Promise<{ deleted: true
   });
 }
 
-export function openDiscordLogin(): void {
-  window.open(`${API_BASE}/auth/discord/login`, "_self");
+export async function openDiscordLogin(): Promise<void> {
+  await openExternalUrl(`${API_BASE}/auth/discord/login`);
 }
 
 export function openDiscordBotInstall(guildId: string): void {
