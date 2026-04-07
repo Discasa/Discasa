@@ -212,11 +212,17 @@ export function App() {
   const albumsRef = useRef<AlbumRecord[]>([]);
   const selectedViewRef = useRef<SidebarView>(selectedView);
   const selectionAnchorRef = useRef<string | null>(null);
+  const hasBootstrappedRef = useRef(false);
 
   const thumbnailZoomPercent = THUMBNAIL_ZOOM_LEVELS[thumbnailZoomIndex] ?? DEFAULT_THUMBNAIL_ZOOM_PERCENT;
   const thumbnailSize = getThumbnailSizeFromZoomPercent(thumbnailZoomPercent);
 
   useEffect(() => {
+    if (hasBootstrappedRef.current) {
+      return;
+    }
+
+    hasBootstrappedRef.current = true;
     void bootstrap();
   }, []);
 

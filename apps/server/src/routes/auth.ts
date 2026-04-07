@@ -2,8 +2,8 @@ import { randomBytes } from "node:crypto";
 import { Router, type Request } from "express";
 import { PermissionsBitField } from "discord.js";
 import { clearPersistedAuthSession, setPersistedAuthSession } from "../lib/auth-store";
-import { setActiveStorageContext } from "../lib/store";
 import { env } from "../lib/env";
+import { setActiveStorageContext } from "../lib/store";
 
 type DiscordTokenResponse = {
   access_token: string;
@@ -256,22 +256,6 @@ router.get("/discord/login", (request, response) => {
   response.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
 });
 
-router.post("/discord/logout", (request, response) => {
-  clearPersistedAuthSession();
-  setActiveStorageContext(null);
-
-  request.session.destroy((error) => {
-    if (error) {
-      console.error("Discord logout failed", error);
-      response.status(500).json({ error: "Could not logout from Discord." });
-      return;
-    }
-
-    response.clearCookie("connect.sid");
-    response.json({ loggedOut: true });
-  });
-});
-
 router.get("/discord/install", (request, response) => {
   if (env.mockMode) {
     response.send(
@@ -296,6 +280,23 @@ router.get("/discord/install", (request, response) => {
   }
 
   response.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
+});
+
+
+router.post("/discord/logout", (request, response) => {
+  clearPersistedAuthSession();
+  setActiveStorageContext(null);
+
+  response.clearCookie("connect.sid");
+
+  request.session.destroy((error) => {
+    if (error) {
+      response.status(500).json({ error: "Could not logout from Discord." });
+      return;
+    }
+
+    response.json({ loggedOut: true });
+  });
 });
 
 router.get("/discord/callback", async (request, response) => {

@@ -163,8 +163,8 @@ export async function openDiscordLogin(): Promise<void> {
   await openExternalUrl(`${API_BASE}/auth/discord/login`);
 }
 
-export async function logoutDiscord(): Promise<void> {
-  await requestJson<{ loggedOut: true }>("/auth/discord/logout", {
+export async function logoutDiscord(): Promise<{ loggedOut: true }> {
+  return requestJson<{ loggedOut: true }>("/auth/discord/logout", {
     method: "POST",
   });
 }
