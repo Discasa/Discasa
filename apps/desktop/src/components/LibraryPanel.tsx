@@ -311,6 +311,13 @@ export function LibraryPanel({
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
 
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
+  const thumbnailZoomProgress = useMemo(() => {
+    if (thumbnailZoomLevelCount <= 1) {
+      return 0;
+    }
+
+    return (thumbnailZoomIndex / (thumbnailZoomLevelCount - 1)) * 100;
+  }, [thumbnailZoomIndex, thumbnailZoomLevelCount]);
 
   function handleThumbnailZoomChange(event: ChangeEvent<HTMLInputElement>): void {
     onThumbnailZoomIndexChange(Number(event.currentTarget.value));
@@ -521,7 +528,11 @@ export function LibraryPanel({
         </div>
 
         <div className="library-tools">
-          <label className="thumbnail-zoom-control" title="Thumbnail zoom">
+          <label
+            className="thumbnail-zoom-control"
+            title="Thumbnail zoom"
+            style={{ "--thumbnail-zoom-progress": `${thumbnailZoomProgress}%` } as CSSProperties}
+          >
             <span className="thumbnail-zoom-label">Zoom</span>
             <input
               className="thumbnail-zoom-slider"
