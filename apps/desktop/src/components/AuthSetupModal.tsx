@@ -12,6 +12,7 @@ type AuthSetupModalProps = {
   error: string;
   isLoadingGuilds: boolean;
   isApplyingGuild: boolean;
+  isCheckingSetup: boolean;
   hasOpenedBotInvite: boolean;
   onStartLogin: () => void;
   onSelectGuild: (guildId: string) => void;
@@ -36,6 +37,7 @@ export function AuthSetupModal({
   error,
   isLoadingGuilds,
   isApplyingGuild,
+  isCheckingSetup,
   hasOpenedBotInvite,
   onStartLogin,
   onSelectGuild,
@@ -106,8 +108,8 @@ export function AuthSetupModal({
           <span className="auth-setup-eyebrow">Choose a server</span>
           <h2>Select where Discasa should be applied</h2>
           <p>
-            Pick one of the Discord servers where you own the server or have permission to manage it. Discasa will use this
-            server to create the channels that store your files and metadata.
+            Pick one of the Discord servers where you own the server or have permission to manage it. Discasa will check if
+            the bot and the Discasa structure are already present before deciding the next step automatically.
           </p>
         </div>
 
@@ -119,7 +121,7 @@ export function AuthSetupModal({
             id="auth-setup-server-select"
             className="auth-setup-select"
             value={selectedGuildId}
-            disabled={isLoadingGuilds || !hasGuilds}
+            disabled={isLoadingGuilds || isCheckingSetup || !hasGuilds}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => onSelectGuild(event.currentTarget.value)}
           >
             {!hasGuilds ? <option value="">No eligible servers found</option> : null}
@@ -136,16 +138,21 @@ export function AuthSetupModal({
         </div>
 
         <div className="auth-setup-actions spaced">
-          <button type="button" className="pill-button secondary-button" onClick={onRetryGuilds}>
+          <button
+            type="button"
+            className="pill-button secondary-button"
+            onClick={onRetryGuilds}
+            disabled={isCheckingSetup}
+          >
             Refresh list
           </button>
           <button
             type="button"
             className="pill-button accent-button primary-button"
             onClick={onConfirmGuild}
-            disabled={!selectedGuildId}
+            disabled={!selectedGuildId || isCheckingSetup}
           >
-            OK
+            {isCheckingSetup ? "Checking..." : "OK"}
           </button>
         </div>
       </>
@@ -160,7 +167,7 @@ export function AuthSetupModal({
           <h2>Add the Discasa bot to {selectedGuildName ?? "the selected server"}</h2>
           <p>
             Before applying Discasa, invite the bot to the selected server in your browser. After finishing the Discord
-            authorization, return here and continue to the storage setup step.
+            authorization, return here and let Discasa confirm that the bot is really present before continuing.
           </p>
         </div>
 
@@ -179,9 +186,9 @@ export function AuthSetupModal({
             type="button"
             className="pill-button accent-button primary-button"
             onClick={onContinueToApply}
-            disabled={!selectedGuildId || !hasOpenedBotInvite}
+            disabled={!selectedGuildId || !hasOpenedBotInvite || isCheckingSetup}
           >
-            Continue
+            {isCheckingSetup ? "Checking..." : "Continue"}
           </button>
         </div>
       </>

@@ -15,6 +15,7 @@ import {
   deleteLibraryItem,
   getAlbums,
   getAppConfig,
+  getDiscasaSetupStatus,
   getGuilds,
   getLibraryItems,
   getSession,
@@ -178,6 +179,7 @@ export function App() {
   const [discordSettingsError, setDiscordSettingsError] = useState("");
   const [authSetupStep, setAuthSetupStep] = useState<AuthSetupStep | null>(null);
   const [authSetupError, setAuthSetupError] = useState("");
+  const [isCheckingSetup, setIsCheckingSetup] = useState(false);
   const [hasOpenedBotInvite, setHasOpenedBotInvite] = useState(false);
   const [albums, setAlbums] = useState<AlbumRecord[]>([]);
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -582,6 +584,7 @@ export function App() {
       }
 
       setAuthSetupError("");
+      setIsCheckingSetup(false);
       setHasOpenedBotInvite(false);
       setAuthSetupStep(getRequiredAuthSetupStep(session));
     } catch (caughtError) {
@@ -971,6 +974,7 @@ export function App() {
     setIsSettingsOpen(false);
     setDiscordSettingsError("");
     setAuthSetupError("");
+    setIsCheckingSetup(false);
     setHasOpenedBotInvite(false);
     setAuthSetupStep("waiting");
 
@@ -988,15 +992,42 @@ export function App() {
     await loadEligibleGuilds(activeGuildId || undefined);
   }
 
-  function handleConfirmSetupGuildSelection(): void {
+  async function handleConfirmSetupGuildSelection(): Promise<void> {
     if (!selectedGuildId) {
       setAuthSetupError("Select a server first.");
       return;
     }
 
+    setIsCheckingSetup(true);
     setAuthSetupError("");
-    setHasOpenedBotInvite(false);
-    setAuthSetupStep("invite-bot");
+
+    try {
+      const status = await getDiscasaSetupStatus(selectedGuildId);
+
+      if (status.isApplied) {
+        setHasOpenedBotInvite(true);
+        await applyGuildSelection(
+          selectedGuildId,
+          `Discasa detected in ${selectedGuildName ?? "the selected server"}.`,
+        );
+        return;
+      }
+
+      if (status.botPresent) {
+        setHasOpenedBotInvite(true);
+        setAuthSetupStep("apply-server");
+        return;
+      }
+
+      setHasOpenedBotInvite(false);
+      setAuthSetupStep("invite-bot");
+    } catch (caughtError) {
+      setAuthSetupError(
+        caughtError instanceof Error ? caughtError.message : "Could not inspect the selected server.",
+      );
+    } finally {
+      setIsCheckingSetup(false);
+    }
   }
 
   function handleOpenBotInviteFromSetup(): void {
@@ -1010,7 +1041,7 @@ export function App() {
     setHasOpenedBotInvite(true);
   }
 
-  function handleContinueToApplyFromSetup(): void {
+  async function handleContinueToApplyFromSetup(): Promise<void> {
     if (!selectedGuildId) {
       setAuthSetupError("Select a server first.");
       return;
@@ -1021,8 +1052,33 @@ export function App() {
       return;
     }
 
+    setIsCheckingSetup(true);
     setAuthSetupError("");
-    setAuthSetupStep("apply-server");
+
+    try {
+      const status = await getDiscasaSetupStatus(selectedGuildId);
+
+      if (!status.botPresent) {
+        setAuthSetupError("The bot was not detected in the selected server yet. Finish the invite and try again.");
+        return;
+      }
+
+      if (status.isApplied) {
+        await applyGuildSelection(
+          selectedGuildId,
+          `Discasa detected in ${selectedGuildName ?? "the selected server"}.`,
+        );
+        return;
+      }
+
+      setAuthSetupStep("apply-server");
+    } catch (caughtError) {
+      setAuthSetupError(
+        caughtError instanceof Error ? caughtError.message : "Could not confirm the bot installation.",
+      );
+    } finally {
+      setIsCheckingSetup(false);
+    }
   }
 
   async function handleApplyGuildFromSetup(): Promise<void> {
@@ -1332,6 +1388,7 @@ export function App() {
           error={authSetupError}
           isLoadingGuilds={isLoadingGuilds}
           isApplyingGuild={isApplyingGuild}
+          isCheckingSetup={isCheckingSetup}
           hasOpenedBotInvite={hasOpenedBotInvite}
           onStartLogin={() => {
             void handleOpenDiscordLoginFlow();
@@ -1341,13 +1398,18 @@ export function App() {
             setHasOpenedBotInvite(false);
             setAuthSetupError("");
           }}
-          onConfirmGuild={handleConfirmSetupGuildSelection}
+          onConfirmGuild={() => {
+            void handleConfirmSetupGuildSelection();
+          }}
           onBackToLogin={() => {
             setHasOpenedBotInvite(false);
+            setIsCheckingSetup(false);
             setAuthSetupError("");
             setAuthSetupStep("login");
           }}
           onBackToServerSelection={() => {
+            setHasOpenedBotInvite(false);
+            setIsCheckingSetup(false);
             setAuthSetupError("");
             setAuthSetupStep("select-server");
           }}
@@ -1355,7 +1417,9 @@ export function App() {
             void handleRefreshGuildSetup();
           }}
           onOpenBotInvite={handleOpenBotInviteFromSetup}
-          onContinueToApply={handleContinueToApplyFromSetup}
+          onContinueToApply={() => {
+            void handleContinueToApplyFromSetup();
+          }}
           onApplyGuild={() => {
             void handleApplyGuildFromSetup();
           }}

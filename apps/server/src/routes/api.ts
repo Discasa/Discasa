@@ -35,6 +35,7 @@ import {
   hasCurrentFolderSnapshot,
   hasCurrentIndexSnapshot,
   initializeDiscasaInGuild,
+  inspectDiscasaSetup,
   listEligibleGuilds,
   moveStoredItemToTrash,
   readLatestConfigSnapshot,
@@ -112,6 +113,28 @@ router.get("/guilds", async (request, response, next) => {
 
     const guilds = await listEligibleGuilds(request.session.discordAccessToken);
     response.json(guilds);
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+router.get("/discasa/status", async (request, response, next) => {
+  try {
+    if (!request.session.authenticated) {
+      response.status(401).json({ error: "Discord login required." });
+      return;
+    }
+
+    const guildId = String(request.query.guildId ?? "");
+
+    if (!guildId) {
+      response.status(400).json({ error: "guildId is required" });
+      return;
+    }
+
+    const status = await inspectDiscasaSetup(guildId);
+    response.json(status);
   } catch (error) {
     next(error);
   }

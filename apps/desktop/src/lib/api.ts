@@ -13,6 +13,16 @@ import type {
 
 const API_BASE = "http://localhost:3001";
 
+export type DiscasaSetupStatus = {
+  botPresent: boolean;
+  categoryPresent: boolean;
+  channelsPresent: boolean;
+  configMarkerPresent: boolean;
+  isApplied: boolean;
+  missingChannels: string[];
+};
+
+
 function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -63,6 +73,11 @@ export async function getSession(): Promise<AppSession> {
 
 export async function getGuilds(): Promise<GuildSummary[]> {
   return requestJson<GuildSummary[]>("/api/guilds");
+}
+
+export async function getDiscasaSetupStatus(guildId: string): Promise<DiscasaSetupStatus> {
+  const query = new URLSearchParams({ guildId });
+  return requestJson<DiscasaSetupStatus>(`/api/discasa/status?${query.toString()}`);
 }
 
 export async function initializeDiscasa(guildId: string): Promise<DiscasaInitializationResponse> {

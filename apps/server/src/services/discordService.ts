@@ -41,10 +41,30 @@ type LegacyPersistedIndexSnapshot = {
   items: LibraryItem[];
 };
 
+type DiscasaInstallMarker = {
+  app: "discasa";
+  version: 1;
+  guildId: string;
+  categoryName: string;
+  channels: readonly string[];
+  installedAt: string;
+  updatedAt: string;
+};
+
+type DiscasaSetupStatus = {
+  botPresent: boolean;
+  categoryPresent: boolean;
+  channelsPresent: boolean;
+  configMarkerPresent: boolean;
+  isApplied: boolean;
+  missingChannels: string[];
+};
+
 const INDEX_SNAPSHOT_FILENAME = "discasa-index.snapshot.json";
 const LEGACY_INDEX_SNAPSHOT_FILENAME = "discasa-index.json";
 const FOLDER_SNAPSHOT_FILENAME = "discasa-folder.snapshot.json";
 const CONFIG_SNAPSHOT_FILENAME = "discasa-config.snapshot.json";
+const INSTALL_MARKER_FILENAME = "discasa-install.marker.json";
 let botClient: Client | null = null;
 
 async function getBotClient(): Promise<Client | null> {
@@ -401,6 +421,21 @@ function isConfigSnapshot(raw: unknown): raw is PersistedConfigSnapshot {
   return entry.version === 1 && isDiscasaConfig(entry.config);
 }
 
+function isInstallMarker(raw: unknown): raw is DiscasaInstallMarker {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+
+  const entry = raw as Record<string, unknown>;
+  return (
+    entry.app === "discasa" &&
+    entry.version === 1 &&
+    typeof entry.guildId === "string" &&
+    typeof entry.categoryName === "string" &&
+    Array.isArray(entry.channels)
+  );
+}
+
 function convertLegacyIndexToCurrent(raw: LegacyPersistedIndexSnapshot): PersistedIndexSnapshot {
   return {
     version: 2,
@@ -486,6 +521,107 @@ async function readJsonSnapshot(channelId: string, fileNames: string[]): Promise
   }
 }
 
+
+async function readInstallMarker(channelId: string): Promise<DiscasaInstallMarker | null> {
+  const current = await readJsonSnapshot(channelId, [INSTALL_MARKER_FILENAME]);
+  if (current && isInstallMarker(current.payload)) {
+    return current.payload;
+  }
+
+  return null;
+}
+
+function resolveDiscasaStructure(guild: Guild): {
+  category: any | null;
+  channels: Map<string, { id: string; name: string }>;
+  missingChannels: string[];
+} {
+  const category = guild.channels.cache.find(
+    (channel) => channel.type === ChannelType.GuildCategory && channel.name === DISCASA_CATEGORY_NAME,
+  );
+
+  const channels = new Map<string, { id: string; name: string }>();
+
+  if (category) {
+    for (const channelName of DISCASA_CHANNELS) {
+      const matchedChannel = guild.channels.cache.find(
+        (channel) =>
+          channel.type === ChannelType.GuildText &&
+          channel.parentId === category.id &&
+          channel.name === channelName,
+      );
+
+      if (matchedChannel) {
+        channels.set(channelName, {
+          id: matchedChannel.id,
+          name: matchedChannel.name,
+        });
+      }
+    }
+  }
+
+  const missingChannels = DISCASA_CHANNELS.filter((channelName) => !channels.has(channelName));
+
+  return {
+    category,
+    channels,
+    missingChannels,
+  };
+}
+
+function buildActiveStorageContext(
+  guild: Guild,
+  category: { id: string; name: string },
+  channels: Map<string, { id: string; name: string }>,
+): ActiveStorageContext {
+  const driveChannel = channels.get(DISCASA_CHANNELS[0]);
+  const indexChannel = channels.get(DISCASA_CHANNELS[1]);
+  const folderChannel = channels.get(DISCASA_CHANNELS[2]);
+  const trashChannel = channels.get(DISCASA_CHANNELS[3]);
+  const configChannel = channels.get(DISCASA_CHANNELS[4]);
+
+  if (!driveChannel || !indexChannel || !folderChannel || !trashChannel || !configChannel) {
+    throw new Error("Discasa storage channels could not be resolved.");
+  }
+
+  return {
+    guildId: guild.id,
+    guildName: guild.name,
+    categoryId: category.id,
+    categoryName: category.name,
+    driveChannelId: driveChannel.id,
+    driveChannelName: driveChannel.name,
+    indexChannelId: indexChannel.id,
+    indexChannelName: indexChannel.name,
+    folderChannelId: folderChannel.id,
+    folderChannelName: folderChannel.name,
+    trashChannelId: trashChannel.id,
+    trashChannelName: trashChannel.name,
+    configChannelId: configChannel.id,
+    configChannelName: configChannel.name,
+  };
+}
+
+async function syncInstallMarker(context: ActiveStorageContext): Promise<void> {
+  const marker: DiscasaInstallMarker = {
+    app: "discasa",
+    version: 1,
+    guildId: context.guildId,
+    categoryName: context.categoryName,
+    channels: DISCASA_CHANNELS,
+    installedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await writeSnapshotToChannel(
+    context.configChannelId,
+    INSTALL_MARKER_FILENAME,
+    JSON.stringify(marker, null, 2),
+    "Discasa install marker",
+    [INSTALL_MARKER_FILENAME],
+  );
+}
+
 async function writeSnapshotToChannel(
   channelId: string,
   fileName: string,
@@ -553,6 +689,64 @@ export async function listEligibleGuilds(accessToken?: string): Promise<GuildSum
     }));
 }
 
+
+export async function inspectDiscasaSetup(guildId: string): Promise<DiscasaSetupStatus> {
+  if (env.mockMode) {
+    return {
+      botPresent: true,
+      categoryPresent: true,
+      channelsPresent: true,
+      configMarkerPresent: true,
+      isApplied: true,
+      missingChannels: [],
+    };
+  }
+
+  const client = await getBotClient();
+  if (!client) {
+    return {
+      botPresent: false,
+      categoryPresent: false,
+      channelsPresent: false,
+      configMarkerPresent: false,
+      isApplied: false,
+      missingChannels: [...DISCASA_CHANNELS],
+    };
+  }
+
+  let guild: Guild;
+
+  try {
+    guild = await client.guilds.fetch(guildId);
+  } catch {
+    return {
+      botPresent: false,
+      categoryPresent: false,
+      channelsPresent: false,
+      configMarkerPresent: false,
+      isApplied: false,
+      missingChannels: [...DISCASA_CHANNELS],
+    };
+  }
+
+  await guild.channels.fetch();
+  const structure = resolveDiscasaStructure(guild);
+  const configChannel = structure.channels.get("discasa-config");
+  const configMarkerPresent = configChannel ? Boolean(await readInstallMarker(configChannel.id)) : false;
+  const categoryPresent = Boolean(structure.category);
+  const channelsPresent = structure.missingChannels.length === 0;
+  const isApplied = categoryPresent && channelsPresent && configMarkerPresent;
+
+  return {
+    botPresent: true,
+    categoryPresent,
+    channelsPresent,
+    configMarkerPresent,
+    isApplied,
+    missingChannels: structure.missingChannels,
+  };
+}
+
 export async function initializeDiscasaInGuild(guildId: string, authenticatedUserId?: string): Promise<ActiveStorageContext> {
   if (env.mockMode) {
     return {
@@ -594,13 +788,10 @@ export async function initializeDiscasaInGuild(guildId: string, authenticatedUse
   }
 
   const discasaOverwrites = await buildDiscasaPermissionOverwrites(guild, botMember.id, authenticatedUserId);
-
-  const existingCategory = guild.channels.cache.find(
-    (channel) => channel.type === ChannelType.GuildCategory && channel.name === DISCASA_CATEGORY_NAME,
-  );
+  const initialStructure = resolveDiscasaStructure(guild);
 
   const category =
-    existingCategory ??
+    initialStructure.category ??
     (await guild.channels.create({
       name: DISCASA_CATEGORY_NAME,
       type: ChannelType.GuildCategory,
@@ -613,30 +804,29 @@ export async function initializeDiscasaInGuild(guildId: string, authenticatedUse
     reason: "Secure Discasa category permissions",
   });
 
-  const resolvedChannels = new Map<string, { id: string; name: string }>();
+  const resolvedChannels = new Map(initialStructure.channels);
 
   for (const channelName of DISCASA_CHANNELS) {
-    const existing = guild.channels.cache.find(
-      (channel) =>
-        channel.type === ChannelType.GuildText &&
-        channel.parentId === category.id &&
-        channel.name === channelName,
-    );
+    const existing = resolvedChannels.get(channelName);
 
-    const nextChannel =
-      existing ??
-      (await guild.channels.create({
-        name: channelName,
-        type: ChannelType.GuildText,
-        parent: category.id,
-        permissionOverwrites: discasaOverwrites,
-        reason: "Initialize private Discasa channels",
-      }));
+    if (existing) {
+      const existingChannel = await guild.channels.fetch(existing.id);
+      if (existingChannel && existingChannel.type === ChannelType.GuildText) {
+        await existingChannel.edit({
+          parent: category.id,
+          permissionOverwrites: discasaOverwrites,
+          reason: "Secure Discasa channel permissions",
+        });
+      }
+      continue;
+    }
 
-    await nextChannel.edit({
+    const nextChannel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: discasaOverwrites,
-      reason: "Secure Discasa channel permissions",
+      reason: "Initialize private Discasa channels",
     });
 
     resolvedChannels.set(channelName, {
@@ -645,32 +835,9 @@ export async function initializeDiscasaInGuild(guildId: string, authenticatedUse
     });
   }
 
-  const driveChannel = resolvedChannels.get(DISCASA_CHANNELS[0]);
-  const indexChannel = resolvedChannels.get(DISCASA_CHANNELS[1]);
-  const folderChannel = resolvedChannels.get(DISCASA_CHANNELS[2]);
-  const trashChannel = resolvedChannels.get(DISCASA_CHANNELS[3]);
-  const configChannel = resolvedChannels.get(DISCASA_CHANNELS[4]);
-
-  if (!driveChannel || !indexChannel || !folderChannel || !trashChannel || !configChannel) {
-    throw new Error("Discasa storage channels could not be resolved.");
-  }
-
-  return {
-    guildId: guild.id,
-    guildName: guild.name,
-    categoryId: category.id,
-    categoryName: category.name,
-    driveChannelId: driveChannel.id,
-    driveChannelName: driveChannel.name,
-    indexChannelId: indexChannel.id,
-    indexChannelName: indexChannel.name,
-    folderChannelId: folderChannel.id,
-    folderChannelName: folderChannel.name,
-    trashChannelId: trashChannel.id,
-    trashChannelName: trashChannel.name,
-    configChannelId: configChannel.id,
-    configChannelName: configChannel.name,
-  };
+  const context = buildActiveStorageContext(guild, { id: category.id, name: category.name }, resolvedChannels);
+  await syncInstallMarker(context);
+  return context;
 }
 
 export async function uploadFilesToDiscordDrive(
