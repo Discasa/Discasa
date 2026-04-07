@@ -16,7 +16,9 @@ import {
   GatewayIntentBits,
   Message,
   PermissionsBitField,
+  type Guild,
   type GuildTextBasedChannel,
+  type OverwriteResolvable,
 } from "discord.js";
 import type { ActiveStorageContext, UploadedFileRecord } from "../lib/store";
 import { env } from "../lib/env";
@@ -153,6 +155,37 @@ function getPermissionLabels(permissions: string, owner: boolean): string[] {
   }
 
   return labels;
+}
+
+function buildDiscasaPermissionOverwrites(guild: Guild, botMemberId: string, authenticatedUserId?: string): OverwriteResolvable[] {
+  const overwrites: OverwriteResolvable[] = [
+    {
+      id: guild.roles.everyone.id,
+      deny: [PermissionsBitField.Flags.ViewChannel],
+    },
+    {
+      id: botMemberId,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.AttachFiles,
+        PermissionsBitField.Flags.ReadMessageHistory,
+        PermissionsBitField.Flags.ManageChannels,
+      ],
+    },
+  ];
+
+  if (authenticatedUserId) {
+    overwrites.push({
+      id: authenticatedUserId,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.ReadMessageHistory,
+      ],
+    });
+  }
+
+  return overwrites;
 }
 
 async function getGuildTextChannel(channelId: string): Promise<GuildTextBasedChannel> {
@@ -519,7 +552,7 @@ export async function listEligibleGuilds(accessToken?: string): Promise<GuildSum
     }));
 }
 
-export async function initializeDiscasaInGuild(guildId: string): Promise<ActiveStorageContext> {
+export async function initializeDiscasaInGuild(guildId: string, authenticatedUserId?: string): Promise<ActiveStorageContext> {
   if (env.mockMode) {
     return {
       guildId,
@@ -554,6 +587,8 @@ export async function initializeDiscasaInGuild(guildId: string): Promise<ActiveS
     throw new Error("The bot is missing Manage Channels permission in the selected guild.");
   }
 
+  const discasaOverwrites = buildDiscasaPermissionOverwrites(guild, botMember.id, authenticatedUserId);
+
   const existingCategory = guild.channels.cache.find(
     (channel) => channel.type === ChannelType.GuildCategory && channel.name === DISCASA_CATEGORY_NAME,
   );
@@ -563,14 +598,23 @@ export async function initializeDiscasaInGuild(guildId: string): Promise<ActiveS
     (await guild.channels.create({
       name: DISCASA_CATEGORY_NAME,
       type: ChannelType.GuildCategory,
-      reason: "Initialize Discasa category",
+      permissionOverwrites: discasaOverwrites,
+      reason: "Initialize private Discasa category",
     }));
+
+  await category.edit({
+    permissionOverwrites: discasaOverwrites,
+    reason: "Secure Discasa category permissions",
+  });
 
   const resolvedChannels = new Map<string, { id: string; name: string }>();
 
   for (const channelName of DISCASA_CHANNELS) {
     const existing = guild.channels.cache.find(
-      (channel) => channel.parentId === category.id && channel.name === channelName,
+      (channel) =>
+        channel.type === ChannelType.GuildText &&
+        channel.parentId === category.id &&
+        channel.name === channelName,
     );
 
     const nextChannel =
@@ -579,8 +623,15 @@ export async function initializeDiscasaInGuild(guildId: string): Promise<ActiveS
         name: channelName,
         type: ChannelType.GuildText,
         parent: category.id,
-        reason: "Initialize Discasa channels",
+        permissionOverwrites: discasaOverwrites,
+        reason: "Initialize private Discasa channels",
       }));
+
+    await nextChannel.edit({
+      parent: category.id,
+      permissionOverwrites: discasaOverwrites,
+      reason: "Secure Discasa channel permissions",
+    });
 
     resolvedChannels.set(channelName, {
       id: nextChannel.id,

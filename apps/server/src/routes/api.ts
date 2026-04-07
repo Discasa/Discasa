@@ -126,7 +126,7 @@ router.post("/discasa/initialize", async (request, response, next) => {
       return;
     }
 
-    const result = await initializeDiscasaInGuild(guildId);
+    const result = await initializeDiscasaInGuild(guildId, request.session.user?.id);
     setActiveStorageContext(result);
 
     const [indexSnapshot, folderSnapshot, configSnapshot, hasCurrentIndex, hasCurrentFolder, hasCurrentConfig] = await Promise.all([
