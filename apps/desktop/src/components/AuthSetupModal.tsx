@@ -1,4 +1,3 @@
-import "../auth-setup.css";
 import type { ChangeEvent } from "react";
 import { DISCASA_CHANNELS, type GuildSummary } from "@discasa/shared";
 import { BaseModal } from "./BaseModal";
