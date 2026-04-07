@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { GuildSummary } from "@discasa/shared";
 import type { SettingsSection } from "../ui-types";
+import { logoutDiscord } from "../lib/api";
 import { BaseModal } from "./BaseModal";
 import { ProfileAvatar } from "./ProfileAvatar";
 
@@ -351,7 +352,7 @@ function AccentColorPicker({ color, accentInputError, onCommitHex }: AccentColor
 
     const normalized = normalizeHexColor(nextValue);
     if (!normalized) {
-      setDraftError(nextValue.trim().length === 0 ? "Enter a valid HEX color." : "Enter a valid HEX color.");
+      setDraftError("Enter a valid HEX color.");
       return;
     }
 
@@ -491,116 +492,84 @@ function AccentColorPicker({ color, accentInputError, onCommitHex }: AccentColor
   );
 }
 
-export function SettingsModal({
-  profile,
-  settingsSection,
-  sessionName,
-  guilds,
-  selectedGuildId,
-  activeGuildName,
-  isLoadingGuilds,
-  isApplyingGuild,
-  discordSettingsError,
-  minimizeToTray,
-  closeToTray,
-  accentColor,
-  accentInput: _accentInput,
-  accentInputError,
-  onClose,
-  onSelectSection,
-  onOpenDiscordLogin,
-  onOpenDiscordBotInstall,
-  onSelectGuild,
-  onApplyGuild,
-  onChangeMinimizeToTray,
-  onChangeCloseToTray,
-  onAccentInputChange,
-  onAccentInputBlur: _onAccentInputBlur,
-}: SettingsModalProps) {
-  function renderGuildOptions() {
-    if (isLoadingGuilds) {
-      return <option value="">Loading servers...</option>;
-    }
+export function SettingsModal(props: SettingsModalProps) {
+  const {
+    profile,
+    settingsSection,
+    sessionName,
+    activeGuildName,
+    minimizeToTray,
+    closeToTray,
+    accentColor,
+    accentInputError,
+    onClose,
+    onSelectSection,
+    onChangeMinimizeToTray,
+    onChangeCloseToTray,
+    onAccentInputChange,
+  } = props;
 
-    if (!guilds.length) {
-      return <option value="">No eligible servers found</option>;
-    }
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
 
-    return [
-      <option key="placeholder" value="">
-        Select a server
-      </option>,
-      ...guilds.map((guild) => (
-        <option key={guild.id} value={guild.id}>
-          {guild.name}
-        </option>
-      )),
-    ];
+  async function handleLogout(): Promise<void> {
+    setIsLoggingOut(true);
+    setLogoutError("");
+
+    try {
+      await logoutDiscord();
+      window.location.reload();
+    } catch (caughtError) {
+      setLogoutError(caughtError instanceof Error ? caughtError.message : "Could not logout from Discord.");
+      setIsLoggingOut(false);
+    }
   }
 
   function renderDiscordContent() {
+    const isConnected = Boolean(sessionName);
+
     return (
       <>
         <div className="settings-modal-header">
           <div>
             <h2>Discord</h2>
-            <p>Connect your Discord account, choose a server, add the bot in the browser, then return here and apply that server.</p>
+            <p>Discord authentication is handled automatically outside Discasa whenever the app needs a valid login.</p>
           </div>
         </div>
 
         <div className="settings-card panel-surface-secondary">
-          <div className={`settings-status ${sessionName ? "connected" : "disconnected"}`}>
-            {sessionName ? `Connected as ${sessionName}` : "Not connected"}
-          </div>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            <button className="pill-button accent-button primary-button" onClick={onOpenDiscordLogin}>
-              {sessionName ? "Reconnect Discord" : "Login with Discord"}
-            </button>
-
-            <button
-              className="pill-button secondary-button primary-button"
-              onClick={onOpenDiscordBotInstall}
-              disabled={!sessionName || !selectedGuildId}
-            >
-              Add bot to selected server
-            </button>
+          <div className={`settings-status ${isConnected ? "connected" : "disconnected"}`}>
+            {isConnected ? `Connected as ${sessionName}` : "Not connected"}
           </div>
 
           <span className="settings-input-help">
-            The bot installation opens in your default browser so the Discasa window stays intact.
+            {activeGuildName
+              ? `Current applied server: ${activeGuildName}`
+              : "No server is currently applied."}
           </span>
 
-          <div className="settings-field-stack">
-            <label className="settings-input-label" htmlFor="discord-server-select">
-              Target server
-            </label>
-            <select
-              id="discord-server-select"
-              className="form-text-input settings-select-input"
-              value={selectedGuildId}
-              disabled={!sessionName || isLoadingGuilds || !guilds.length}
-              onChange={(event: ChangeEvent<HTMLSelectElement>) => onSelectGuild(event.currentTarget.value)}
-            >
-              {renderGuildOptions()}
-            </select>
-            <span className={`settings-input-help ${discordSettingsError ? "error" : ""}`}>
-              {discordSettingsError ||
-                (activeGuildName
-                  ? `Current applied server: ${activeGuildName}`
-                  : "Select the Discord server that Discasa should use.")}
-            </span>
-          </div>
+          {isConnected ? (
+            <>
+              <button
+                type="button"
+                className="pill-button danger-button primary-button"
+                onClick={() => {
+                  void handleLogout();
+                }}
+                disabled={isLoggingOut}
+              >
+                {isLoggingOut ? "Logging out..." : "Logout from Discord"}
+              </button>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            <button
-              className="pill-button secondary-button primary-button"
-              onClick={onApplyGuild}
-              disabled={!sessionName || !selectedGuildId || isApplyingGuild}
-            >
-              {isApplyingGuild ? "Applying..." : "Apply selected server"}
-            </button>
-          </div>
+              <span className={`settings-input-help ${logoutError ? "error" : ""}`}>
+                {logoutError || "After logout, Discasa will request a new browser login when access is needed again."}
+              </span>
+            </>
+          ) : (
+            <span className="settings-input-help">
+              Discasa will start the browser login flow automatically when a Discord session is required.
+            </span>
+          )}
         </div>
       </>
     );
