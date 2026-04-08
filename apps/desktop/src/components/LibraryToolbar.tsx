@@ -1,4 +1,4 @@
-import type { CSSProperties, ChangeEvent } from "react";
+import type { CSSProperties, ChangeEvent, ReactNode } from "react";
 import type { GalleryDisplayMode } from "../ui-types";
 import { GalleryModeIcon, UploadIcon, ZoomIcon } from "./icons";
 
@@ -8,6 +8,7 @@ type LibraryToolbarProps = {
   thumbnailZoomLevelCount: number;
   thumbnailZoomPercent: number;
   thumbnailZoomProgress: number;
+  bulkActions?: ReactNode;
   onThumbnailZoomIndexChange: (nextIndex: number) => void;
   onToggleGalleryDisplayMode: () => void;
   onRequestUpload: () => void;
@@ -19,6 +20,7 @@ export function LibraryToolbar({
   thumbnailZoomLevelCount,
   thumbnailZoomPercent,
   thumbnailZoomProgress,
+  bulkActions,
   onThumbnailZoomIndexChange,
   onToggleGalleryDisplayMode,
   onRequestUpload,
@@ -31,7 +33,7 @@ export function LibraryToolbar({
 
   return (
     <div className="library-tools">
-      <div className="library-view-controls">
+      <div className={`library-view-controls ${bulkActions ? "has-bulk-actions" : ""}`}>
         <label
           className="thumbnail-zoom-control compact"
           title={`Thumbnail zoom: ${thumbnailZoomPercent}%`}
@@ -61,6 +63,8 @@ export function LibraryToolbar({
         >
           <GalleryModeIcon mode={galleryDisplayMode} />
         </button>
+
+        {bulkActions}
       </div>
 
       <button type="button" className="icon-circle-button upload-button" onClick={onRequestUpload} aria-label="Upload" title="Upload">

@@ -137,3 +137,36 @@ export function GalleryModeIcon({ mode }: { mode: "free" | "square" }) {
     </svg>
   );
 }
+
+export function RestoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 10H4V5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.6 10A8 8 0 1 0 12 4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function FolderStackIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M4.75 8A1.75 1.75 0 0 1 6.5 6.25h4c.39 0 .77.14 1.07.4l1.06.93c.19.16.42.25.67.25h4.2A1.5 1.5 0 0 1 19 9.33v6.42A1.75 1.75 0 0 1 17.25 17.5h-10.5A1.75 1.75 0 0 1 5 15.75V8.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.55"
+        strokeLinejoin="round"
+      />
+      <path d="M3.75 11.25h9.5" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" />
+      <path d="M11.25 9v4.5M9 11.25h4.5" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function CloseSmallIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 7 17 17M17 7 7 17" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}

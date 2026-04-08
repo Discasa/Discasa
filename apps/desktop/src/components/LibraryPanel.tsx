@@ -2,6 +2,7 @@ import { useMemo, useState, type DragEvent } from "react";
 import type { LibraryItem } from "@discasa/shared";
 import type { GalleryDisplayMode } from "../ui-types";
 import "../gallery-stage2.css";
+import { BulkActionBar } from "./BulkActionBar";
 import { LibraryToolbar } from "./LibraryToolbar";
 import { GalleryGrid } from "./GalleryGrid";
 import { stopActionEvent } from "./GalleryItem";
@@ -102,6 +103,53 @@ export function LibraryPanel({
     return (thumbnailZoomIndex / (thumbnailZoomLevelCount - 1)) * 100;
   }, [thumbnailZoomIndex, thumbnailZoomLevelCount]);
 
+  const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
+
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedItemIdSet.has(item.id)),
+    [items, selectedItemIdSet],
+  );
+
+  const isTrashSelection = selectedItems.length > 0 && selectedItems.every((item) => item.isTrashed);
+  const allSelectedAreFavorite = selectedItems.length > 0 && selectedItems.every((item) => item.isFavorite);
+
+  async function handleBulkFavoriteToggle(): Promise<void> {
+    if (isBusy || selectedItems.length === 0) {
+      return;
+    }
+
+    const nextFavoriteState = !allSelectedAreFavorite;
+    const targets = selectedItems.filter((item) => item.isFavorite !== nextFavoriteState);
+
+    for (const item of targets) {
+      await onToggleFavorite(item.id);
+    }
+  }
+
+  async function handleBulkMoveToTrash(): Promise<void> {
+    if (isBusy || selectedItems.length === 0) {
+      return;
+    }
+
+    const targets = selectedItems.filter((item) => !item.isTrashed);
+
+    for (const item of targets) {
+      await onMoveToTrash(item.id);
+    }
+  }
+
+  async function handleBulkRestore(): Promise<void> {
+    if (isBusy || selectedItems.length === 0) {
+      return;
+    }
+
+    const targets = selectedItems.filter((item) => item.isTrashed);
+
+    for (const item of targets) {
+      await onRestoreFromTrash(item.id);
+    }
+  }
+
   function renderThumbnailActions(item: LibraryItem) {
     if (item.isTrashed) {
       return (
@@ -168,6 +216,26 @@ export function LibraryPanel({
     );
   }
 
+  const bulkActions =
+    selectedItems.length > 0 ? (
+      <BulkActionBar
+        selectedCount={selectedItems.length}
+        isBusy={isBusy}
+        isTrashSelection={isTrashSelection}
+        isAllSelectedFavorite={allSelectedAreFavorite}
+        onToggleFavorite={() => {
+          void handleBulkFavoriteToggle();
+        }}
+        onMoveToTrash={() => {
+          void handleBulkMoveToTrash();
+        }}
+        onRestore={() => {
+          void handleBulkRestore();
+        }}
+        onClearSelection={onClearSelection}
+      />
+    ) : null;
+
   return (
     <main
       className={`library-panel panel-surface ${isDraggingFiles ? "dragging" : ""}`}
@@ -190,6 +258,7 @@ export function LibraryPanel({
           thumbnailZoomLevelCount={thumbnailZoomLevelCount}
           thumbnailZoomPercent={thumbnailZoomPercent}
           thumbnailZoomProgress={thumbnailZoomProgress}
+          bulkActions={bulkActions}
           onThumbnailZoomIndexChange={onThumbnailZoomIndexChange}
           onToggleGalleryDisplayMode={() => {
             setGalleryDisplayMode((current) => (current === "free" ? "square" : "free"));
