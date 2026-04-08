@@ -15,3 +15,18 @@ export type AlbumContextMenuState = {
   albumId: string;
   albumName: string;
 } | null;
+
+export type GalleryDisplayMode = "free" | "square";
+export type MouseWheelBehavior = "zoom" | "navigate";
+
+export type ViewerDraftState = {
+  rotationDegrees: number;
+  hasCrop: boolean;
+  canUndo: boolean;
+};
+
+export type ViewerState = {
+  itemId: string;
+  index: number;
+  total: number;
+} | null;
