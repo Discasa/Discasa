@@ -10,9 +10,12 @@ import {
   type FolderNode,
   type LibraryItem,
   type LibraryItemIndex,
+  type LibraryItemOriginalSource,
+  type LibraryItemSavedMediaEdit,
   type PersistedConfigSnapshot,
   type PersistedFolderSnapshot,
   type PersistedIndexSnapshot,
+  type SaveLibraryItemMediaEditInput,
 } from "@discasa/shared";
 
 type PersistedFolderNode = FolderNode;
@@ -96,6 +99,15 @@ function createDefaultDatabase(): MockDatabase {
     config: cloneDefaultConfig(),
     activeStorage: null,
   };
+}
+
+function clampRotationToRightAngles(value: number): number {
+  const rounded = Math.round(value / 90) * 90;
+  return ((rounded % 360) + 360) % 360;
+}
+
+function hasMeaningfulSavedMediaEdit(input: SaveLibraryItemMediaEditInput): boolean {
+  return clampRotationToRightAngles(input.rotationDegrees) !== 0 || Boolean(input.hasCrop);
 }
 
 function normalizeDiscasaConfig(raw: unknown): DiscasaConfig {
@@ -203,6 +215,47 @@ function normalizeFolderMembership(raw: unknown): PersistedFolderMembership | nu
   };
 }
 
+function normalizeOriginalSource(raw: unknown): LibraryItemOriginalSource | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const entry = raw as Record<string, unknown>;
+  if (typeof entry.attachmentUrl !== "string" || entry.attachmentUrl.length === 0) {
+    return null;
+  }
+
+  return {
+    attachmentUrl: entry.attachmentUrl,
+    storageChannelId:
+      typeof entry.storageChannelId === "string" && entry.storageChannelId.length > 0 ? entry.storageChannelId : undefined,
+    storageMessageId:
+      typeof entry.storageMessageId === "string" && entry.storageMessageId.length > 0 ? entry.storageMessageId : undefined,
+  };
+}
+
+function normalizeSavedMediaEdit(raw: unknown): LibraryItemSavedMediaEdit | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const entry = raw as Record<string, unknown>;
+  if (
+    typeof entry.rotationDegrees !== "number" ||
+    !Number.isFinite(entry.rotationDegrees) ||
+    typeof entry.hasCrop !== "boolean" ||
+    typeof entry.savedAt !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    rotationDegrees: clampRotationToRightAngles(entry.rotationDegrees),
+    hasCrop: entry.hasCrop,
+    savedAt: entry.savedAt,
+  };
+}
+
 function normalizeLibraryItemIndex(raw: unknown): PersistedItem | null {
   if (!raw || typeof raw !== "object") {
     return null;
@@ -238,6 +291,8 @@ function normalizeLibraryItemIndex(raw: unknown): PersistedItem | null {
     isTrashed: entry.isTrashed,
     storageChannelId: typeof entry.storageChannelId === "string" && entry.storageChannelId.length > 0 ? entry.storageChannelId : undefined,
     storageMessageId: typeof entry.storageMessageId === "string" && entry.storageMessageId.length > 0 ? entry.storageMessageId : undefined,
+    originalSource: normalizeOriginalSource(entry.originalSource),
+    savedMediaEdit: normalizeSavedMediaEdit(entry.savedMediaEdit),
   };
 }
 
@@ -278,6 +333,8 @@ function normalizeLegacyHydratedLibraryItem(raw: unknown): LibraryItem | null {
     isTrashed: entry.isTrashed,
     storageChannelId: typeof entry.storageChannelId === "string" && entry.storageChannelId.length > 0 ? entry.storageChannelId : undefined,
     storageMessageId: typeof entry.storageMessageId === "string" && entry.storageMessageId.length > 0 ? entry.storageMessageId : undefined,
+    originalSource: normalizeOriginalSource(entry.originalSource),
+    savedMediaEdit: normalizeSavedMediaEdit(entry.savedMediaEdit),
   };
 }
 
@@ -486,6 +543,14 @@ function createAlbumMembership(folderId: string, itemId: string, addedAt: string
 
 function hasFolder(folderId: string): boolean {
   return database.folders.some((folder) => folder.id === folderId);
+}
+
+function createOriginalSourceFromPersistedItem(item: PersistedItem): LibraryItemOriginalSource {
+  return {
+    attachmentUrl: item.originalSource?.attachmentUrl ?? item.attachmentUrl,
+    storageChannelId: item.originalSource?.storageChannelId ?? item.storageChannelId,
+    storageMessageId: item.originalSource?.storageMessageId ?? item.storageMessageId,
+  };
 }
 
 function createEmptyIndexSnapshot(): PersistedIndexSnapshot {
@@ -753,6 +818,51 @@ export function updateLibraryItemStorage(
   item.attachmentUrl = nextStorage.attachmentUrl;
   item.storageChannelId = nextStorage.storageChannelId;
   item.storageMessageId = nextStorage.storageMessageId;
+
+  if (item.originalSource) {
+    item.originalSource = {
+      attachmentUrl: nextStorage.attachmentUrl,
+      storageChannelId: nextStorage.storageChannelId,
+      storageMessageId: nextStorage.storageMessageId,
+    };
+  }
+
+  saveDatabase();
+  return getLibraryItem(itemId);
+}
+
+export function saveLibraryItemMediaEdit(itemId: string, input: SaveLibraryItemMediaEditInput): LibraryItem | null {
+  const item = database.items.find((entry) => entry.id === itemId);
+  if (!item) {
+    return null;
+  }
+
+  if (!hasMeaningfulSavedMediaEdit(input)) {
+    item.originalSource = null;
+    item.savedMediaEdit = null;
+    saveDatabase();
+    return getLibraryItem(itemId);
+  }
+
+  item.originalSource = createOriginalSourceFromPersistedItem(item);
+  item.savedMediaEdit = {
+    rotationDegrees: clampRotationToRightAngles(input.rotationDegrees),
+    hasCrop: Boolean(input.hasCrop),
+    savedAt: new Date().toISOString(),
+  };
+
+  saveDatabase();
+  return getLibraryItem(itemId);
+}
+
+export function restoreLibraryItemOriginal(itemId: string): LibraryItem | null {
+  const item = database.items.find((entry) => entry.id === itemId);
+  if (!item) {
+    return null;
+  }
+
+  item.originalSource = null;
+  item.savedMediaEdit = null;
   saveDatabase();
   return getLibraryItem(itemId);
 }

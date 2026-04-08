@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import type { LibraryItem, SaveLibraryItemMediaEditInput } from "@discasa/shared";
+import type { SaveLibraryItemMediaEditInput } from "@discasa/shared";
 import { env } from "../lib/env";
 import { getDiscordUploadLimitForGuild, getUploadTooLargeMessage } from "../lib/discordUploadLimit";
 import {
@@ -17,25 +17,21 @@ import {
   getDiscasaConfig,
   getLibraryItem,
   getLibraryItems,
+  renameAlbum,
+  reorderAlbums,
   replaceConfigFromSnapshot,
   replaceDatabaseFromFolderSnapshot,
   replaceDatabaseFromIndexSnapshot,
-  renameAlbum,
-  reorderAlbums,
   resetDiscasaConfig,
   restoreLibraryItem,
+  restoreLibraryItemOriginal,
+  saveLibraryItemMediaEdit,
   setActiveStorageContext,
   toggleFavoriteState,
   trashLibraryItem,
   updateDiscasaConfig,
   updateLibraryItemStorage,
 } from "../lib/store";
-import {
-  attachMediaEditToLibraryItem,
-  attachMediaEditsToLibraryItems,
-  deleteLibraryItemMediaEdit,
-  saveLibraryItemMediaEdit,
-} from "../lib/mediaEditStore";
 import {
   deleteStoredItemFromDiscord,
   hasCurrentConfigSnapshot,
@@ -57,14 +53,6 @@ import {
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
-
-function withMediaEdit(item: LibraryItem | null): LibraryItem | null {
-  if (!item) {
-    return null;
-  }
-
-  return attachMediaEditToLibraryItem(item);
-}
 
 async function syncRemoteIndexState(): Promise<void> {
   const context = getActiveStorageContext();
@@ -377,7 +365,7 @@ router.delete("/albums/:albumId", async (request, response, next) => {
 });
 
 router.get("/library", (_request, response) => {
-  response.json(attachMediaEditsToLibraryItems(getLibraryItems()));
+  response.json(getLibraryItems());
 });
 
 router.post("/upload", upload.array("files"), async (request, response, next) => {
@@ -393,7 +381,7 @@ router.post("/upload", upload.array("files"), async (request, response, next) =>
     if (env.mockMode) {
       const uploaded = addMockFiles(files, albumId);
       await syncRemoteLibraryState();
-      response.status(201).json({ uploaded: attachMediaEditsToLibraryItems(uploaded) });
+      response.status(201).json({ uploaded });
       return;
     }
 
@@ -417,7 +405,7 @@ router.post("/upload", upload.array("files"), async (request, response, next) =>
     const uploadedRecords = await uploadFilesToDiscordDrive(files, activeStorage);
     const uploaded = addUploadedFiles(uploadedRecords, albumId);
     await syncRemoteLibraryState();
-    response.status(201).json({ uploaded: attachMediaEditsToLibraryItems(uploaded) });
+    response.status(201).json({ uploaded });
   } catch (error) {
     next(error);
   }
@@ -434,7 +422,7 @@ router.patch("/library/:itemId/favorite", async (request, response, next) => {
     }
 
     await syncRemoteIndexState();
-    response.json({ item: withMediaEdit(item) });
+    response.json({ item });
   } catch (error) {
     next(error);
   }
@@ -474,7 +462,7 @@ router.patch("/library/:itemId/trash", async (request, response, next) => {
     }
 
     await syncRemoteIndexState();
-    response.json({ item: withMediaEdit(item) });
+    response.json({ item });
   } catch (error) {
     next(error);
   }
@@ -514,7 +502,7 @@ router.patch("/library/:itemId/restore", async (request, response, next) => {
     }
 
     await syncRemoteIndexState();
-    response.json({ item: withMediaEdit(item) });
+    response.json({ item });
   } catch (error) {
     next(error);
   }
@@ -541,7 +529,13 @@ router.patch("/library/:itemId/media-edit", async (request, response, next) => {
       return;
     }
 
-    const item = saveLibraryItemMediaEdit(originalItem, input);
+    const item = saveLibraryItemMediaEdit(itemId, input);
+    if (!item) {
+      response.status(404).json({ error: "Library item not found" });
+      return;
+    }
+
+    await syncRemoteIndexState();
     response.json({ item });
   } catch (error) {
     next(error);
@@ -568,14 +562,14 @@ router.delete("/library/:itemId/media-edit", async (request, response, next) => 
       return;
     }
 
-    deleteLibraryItemMediaEdit(itemId);
-    response.json({
-      item: {
-        ...originalItem,
-        originalSource: null,
-        savedMediaEdit: null,
-      },
-    });
+    const item = restoreLibraryItemOriginal(itemId);
+    if (!item) {
+      response.status(404).json({ error: "Library item not found" });
+      return;
+    }
+
+    await syncRemoteIndexState();
+    response.json({ item });
   } catch (error) {
     next(error);
   }
@@ -600,8 +594,6 @@ router.delete("/library/:itemId", async (request, response, next) => {
 
       await deleteStoredItemFromDiscord(activeStorage, originalItem);
     }
-
-    deleteLibraryItemMediaEdit(itemId);
 
     const deleted = deleteLibraryItem(itemId);
 
