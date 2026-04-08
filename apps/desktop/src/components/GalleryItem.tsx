@@ -17,6 +17,7 @@ type GalleryItemProps = {
   displayMode: GalleryDisplayMode;
   actions: ReactNode;
   onClick: (event: ReactMouseEvent<HTMLElement>, itemId: string) => void;
+  onDoubleClick: (itemId: string) => void;
   onRegisterElement: (itemId: string, element: HTMLElement | null) => void;
 };
 
@@ -254,13 +255,14 @@ function FileThumbnail({ item, displayMode, actions }: { item: LibraryItem; disp
   );
 }
 
-export function GalleryItem({ item, isSelected, displayMode, actions, onClick, onRegisterElement }: GalleryItemProps) {
+export function GalleryItem({ item, isSelected, displayMode, actions, onClick, onDoubleClick, onRegisterElement }: GalleryItemProps) {
   return (
     <article
       ref={(element) => onRegisterElement(item.id, element)}
       className={`file-tile mode-${displayMode} ${isSelected ? "selected" : ""}`}
       title={item.name}
       onClick={(event) => onClick(event, item.id)}
+      onDoubleClick={() => onDoubleClick(item.id)}
     >
       <FileThumbnail item={item} displayMode={displayMode} actions={actions} />
       <div className="file-meta compact">

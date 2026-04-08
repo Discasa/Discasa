@@ -1,0 +1,356 @@
+import { useEffect, useMemo, useState, type WheelEvent } from "react";
+import type { LibraryItem } from "@discasa/shared";
+import { isImage, isVideo } from "../lib/library-helpers";
+
+type MediaViewerModalProps = {
+  item: LibraryItem | null;
+  currentIndex: number;
+  totalItems: number;
+  onClose: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+};
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ArrowLeftIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m14.5 6-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ArrowRightIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ZoomInIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="4.75" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M15 15 19 19" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M10.5 8.1v4.8M8.1 10.5h4.8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ZoomOutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="4.75" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M15 15 19 19" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M8.1 10.5h4.8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function RotateLeftIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 5v4h4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7.5 9A7 7 0 1 1 5 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function RotateRightIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M17 5v4h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16.5 9A7 7 0 1 0 19 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CropIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 4.5v10.25A2.25 2.25 0 0 0 9.25 17H19.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M17 19.5V9.25A2.25 2.25 0 0 0 14.75 7H4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function UndoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 7H4v5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.5 12A7.5 7.5 0 1 1 12 19.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SaveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 4.75h9.75L19.25 8v11.25H6Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M9 4.75v5.5h6v-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M9 19.25v-4.5h6v4.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function clampZoom(value: number): number {
+  return Math.min(5, Math.max(1, Number(value.toFixed(2))));
+}
+
+export function MediaViewerModal({
+  item,
+  currentIndex,
+  totalItems,
+  onClose,
+  onPrevious,
+  onNext,
+}: MediaViewerModalProps) {
+  const isOpen = Boolean(item);
+  const imageMode = item ? isImage(item) : false;
+  const videoMode = item ? isVideo(item) : false;
+
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [rotationDegrees, setRotationDegrees] = useState(0);
+  const [hasCrop, setHasCrop] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    setZoomLevel(1);
+    setRotationDegrees(0);
+    setHasCrop(false);
+  }, [isOpen, item?.id]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+
+      if (event.key === "ArrowLeft") {
+        onPrevious();
+        return;
+      }
+
+      if (event.key === "ArrowRight") {
+        onNext();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose, onNext, onPrevious]);
+
+  const canUndo = zoomLevel !== 1 || rotationDegrees !== 0 || hasCrop;
+  const canGoPrevious = currentIndex > 0;
+  const canGoNext = currentIndex >= 0 && currentIndex < totalItems - 1;
+
+  const mediaTransform = useMemo(
+    () => `translate(-50%, -50%) scale(${zoomLevel}) rotate(${rotationDegrees}deg)`,
+    [rotationDegrees, zoomLevel],
+  );
+
+  function handleWheel(event: WheelEvent<HTMLDivElement>): void {
+    if (!imageMode) {
+      return;
+    }
+
+    event.preventDefault();
+    const direction = event.deltaY < 0 ? 0.14 : -0.14;
+    setZoomLevel((current) => clampZoom(current + direction));
+  }
+
+  if (!item) {
+    return null;
+  }
+
+  return (
+    <div className="media-viewer-root" role="dialog" aria-modal="true" aria-label={`Viewer for ${item.name}`}>
+      <button type="button" className="media-viewer-backdrop" aria-label="Close viewer" onClick={onClose} />
+
+      <div className="media-viewer-modal">
+        <header className="media-viewer-header">
+          <div className="media-viewer-heading">
+            <strong className="media-viewer-title">{item.name}</strong>
+            <span className="media-viewer-counter">
+              {currentIndex + 1} / {totalItems}
+            </span>
+          </div>
+
+          <div className="media-viewer-header-actions">
+            <button type="button" className="media-viewer-icon-button" onClick={onClose} title="Close" aria-label="Close">
+              <CloseIcon />
+            </button>
+          </div>
+        </header>
+
+        <div className="media-viewer-stage">
+          <button
+            type="button"
+            className="media-viewer-nav-button left"
+            onClick={onPrevious}
+            disabled={!canGoPrevious}
+            aria-label="Previous item"
+            title="Previous item"
+          >
+            <ArrowLeftIcon />
+          </button>
+
+          <div
+            className={`media-viewer-viewport ${imageMode ? "image-mode" : ""} ${videoMode ? "video-mode" : ""} ${hasCrop ? "crop-active" : ""}`}
+            onWheel={handleWheel}
+          >
+            {imageMode ? (
+              <img
+                src={item.attachmentUrl}
+                alt={item.name}
+                className="media-viewer-image"
+                draggable={false}
+                style={{
+                  transform: mediaTransform,
+                  objectFit: hasCrop ? "cover" : "contain",
+                }}
+              />
+            ) : null}
+
+            {videoMode ? (
+              <video
+                src={item.attachmentUrl}
+                className="media-viewer-video"
+                controls
+                playsInline
+                preload="metadata"
+              />
+            ) : null}
+
+            {!imageMode && !videoMode ? (
+              <div className="media-viewer-file-fallback">
+                <span className="media-viewer-file-extension">
+                  {(item.name.split(".").pop() || "FILE").slice(0, 5).toUpperCase()}
+                </span>
+                <span className="media-viewer-file-name">{item.name}</span>
+              </div>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            className="media-viewer-nav-button right"
+            onClick={onNext}
+            disabled={!canGoNext}
+            aria-label="Next item"
+            title="Next item"
+          >
+            <ArrowRightIcon />
+          </button>
+        </div>
+
+        <footer className="media-viewer-toolbar">
+          {imageMode ? (
+            <div className="media-viewer-control-group">
+              <button
+                type="button"
+                className="media-viewer-control-button"
+                onClick={() => setZoomLevel((current) => clampZoom(current - 0.2))}
+                disabled={zoomLevel <= 1}
+                title="Zoom out"
+              >
+                <span className="media-viewer-control-icon"><ZoomOutIcon /></span>
+                <span className="media-viewer-control-label">Zoom out</span>
+              </button>
+
+              <button
+                type="button"
+                className="media-viewer-control-button"
+                onClick={() => setZoomLevel((current) => clampZoom(current + 0.2))}
+                disabled={zoomLevel >= 5}
+                title="Zoom in"
+              >
+                <span className="media-viewer-control-icon"><ZoomInIcon /></span>
+                <span className="media-viewer-control-label">Zoom in</span>
+              </button>
+
+              <button
+                type="button"
+                className="media-viewer-control-button"
+                onClick={() => setRotationDegrees((current) => current - 90)}
+                title="Rotate left"
+              >
+                <span className="media-viewer-control-icon"><RotateLeftIcon /></span>
+                <span className="media-viewer-control-label">Rotate left</span>
+              </button>
+
+              <button
+                type="button"
+                className="media-viewer-control-button"
+                onClick={() => setRotationDegrees((current) => current + 90)}
+                title="Rotate right"
+              >
+                <span className="media-viewer-control-icon"><RotateRightIcon /></span>
+                <span className="media-viewer-control-label">Rotate right</span>
+              </button>
+
+              <button
+                type="button"
+                className={`media-viewer-control-button ${hasCrop ? "active" : ""}`}
+                onClick={() => setHasCrop((current) => !current)}
+                title={hasCrop ? "Disable crop preview" : "Enable crop preview"}
+              >
+                <span className="media-viewer-control-icon"><CropIcon /></span>
+                <span className="media-viewer-control-label">Crop</span>
+              </button>
+
+              <button
+                type="button"
+                className="media-viewer-control-button"
+                onClick={() => {
+                  setZoomLevel(1);
+                  setRotationDegrees(0);
+                  setHasCrop(false);
+                }}
+                disabled={!canUndo}
+                title="Undo local edits"
+              >
+                <span className="media-viewer-control-icon"><UndoIcon /></span>
+                <span className="media-viewer-control-label">Undo</span>
+              </button>
+
+              <button
+                type="button"
+                className="media-viewer-control-button disabled"
+                disabled
+                title="Persistent save will be enabled in the next editing step."
+              >
+                <span className="media-viewer-control-icon"><SaveIcon /></span>
+                <span className="media-viewer-control-label">Save</span>
+              </button>
+            </div>
+          ) : (
+            <div className="media-viewer-info-chip">
+              {videoMode ? "Video preview" : "File preview"}
+            </div>
+          )}
+
+          <div className="media-viewer-zoom-readout" aria-live="polite">
+            {imageMode ? `${Math.round(zoomLevel * 100)}%` : "Preview"}
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}

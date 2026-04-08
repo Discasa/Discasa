@@ -26,6 +26,7 @@ type GalleryGridProps = {
   thumbnailSize: number;
   selectedItemIds: string[];
   onSelectItem: (itemId: string, options: { range: boolean; toggle: boolean }) => void;
+  onOpenItem: (itemId: string) => void;
   onClearSelection: () => void;
   onApplySelectionRect: (itemIds: string[], mode: "replace" | "add") => void;
   renderItemActions: (item: LibraryItem) => ReactNode;
@@ -59,6 +60,7 @@ export function GalleryGrid({
   thumbnailSize,
   selectedItemIds,
   onSelectItem,
+  onOpenItem,
   onClearSelection,
   onApplySelectionRect,
   renderItemActions,
@@ -85,6 +87,14 @@ export function GalleryGrid({
       range: event.shiftKey,
       toggle: event.ctrlKey || event.metaKey,
     });
+  }
+
+  function handleItemDoubleClick(itemId: string): void {
+    if (isBusy) {
+      return;
+    }
+
+    onOpenItem(itemId);
   }
 
   function updateSelectionBox(currentClientX: number, currentClientY: number): void {
@@ -204,6 +214,7 @@ export function GalleryGrid({
           displayMode={displayMode}
           actions={renderItemActions(item)}
           onClick={handleItemClick}
+          onDoubleClick={handleItemDoubleClick}
           onRegisterElement={setItemElement}
         />
       ))}

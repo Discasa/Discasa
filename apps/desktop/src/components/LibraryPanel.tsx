@@ -1,10 +1,11 @@
-import { useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import type { LibraryItem } from "@discasa/shared";
-import type { GalleryDisplayMode } from "../ui-types";
+import type { GalleryDisplayMode, ViewerState } from "../ui-types";
 import "../gallery-stage2.css";
 import { BulkActionBar } from "./BulkActionBar";
 import { LibraryToolbar } from "./LibraryToolbar";
 import { GalleryGrid } from "./GalleryGrid";
+import { MediaViewerModal } from "./MediaViewerModal";
 import { stopActionEvent } from "./GalleryItem";
 
 type LibraryPanelProps = {
@@ -94,6 +95,7 @@ export function LibraryPanel({
   onDeleteItem,
 }: LibraryPanelProps) {
   const [galleryDisplayMode, setGalleryDisplayMode] = useState<GalleryDisplayMode>("free");
+  const [viewerState, setViewerState] = useState<ViewerState>(null);
 
   const thumbnailZoomProgress = useMemo(() => {
     if (thumbnailZoomLevelCount <= 1) {
@@ -112,6 +114,41 @@ export function LibraryPanel({
 
   const isTrashSelection = selectedItems.length > 0 && selectedItems.every((item) => item.isTrashed);
   const allSelectedAreFavorite = selectedItems.length > 0 && selectedItems.every((item) => item.isFavorite);
+
+  const activeViewerIndex = useMemo(() => {
+    if (!viewerState) {
+      return -1;
+    }
+
+    return items.findIndex((item) => item.id === viewerState.itemId);
+  }, [items, viewerState]);
+
+  const activeViewerItem = activeViewerIndex >= 0 ? items[activeViewerIndex] ?? null : null;
+
+  useEffect(() => {
+    if (!viewerState) {
+      return;
+    }
+
+    if (items.length === 0) {
+      setViewerState(null);
+      return;
+    }
+
+    const nextIndex = items.findIndex((item) => item.id === viewerState.itemId);
+    if (nextIndex === -1) {
+      setViewerState(null);
+      return;
+    }
+
+    if (viewerState.index !== nextIndex || viewerState.total !== items.length) {
+      setViewerState({
+        itemId: items[nextIndex]?.id ?? viewerState.itemId,
+        index: nextIndex,
+        total: items.length,
+      });
+    }
+  }, [items, viewerState]);
 
   async function handleBulkFavoriteToggle(): Promise<void> {
     if (isBusy || selectedItems.length === 0) {
@@ -148,6 +185,46 @@ export function LibraryPanel({
     for (const item of targets) {
       await onRestoreFromTrash(item.id);
     }
+  }
+
+  function handleOpenViewer(itemId: string): void {
+    const index = items.findIndex((item) => item.id === itemId);
+
+    if (index === -1) {
+      return;
+    }
+
+    setViewerState({
+      itemId,
+      index,
+      total: items.length,
+    });
+  }
+
+  function handleCloseViewer(): void {
+    setViewerState(null);
+  }
+
+  function handleNavigateViewer(direction: "previous" | "next"): void {
+    if (!viewerState) {
+      return;
+    }
+
+    const currentIndex = items.findIndex((item) => item.id === viewerState.itemId);
+    if (currentIndex === -1) {
+      return;
+    }
+
+    const nextIndex = direction === "previous" ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= items.length) {
+      return;
+    }
+
+    setViewerState({
+      itemId: items[nextIndex]?.id ?? viewerState.itemId,
+      index: nextIndex,
+      total: items.length,
+    });
   }
 
   function renderThumbnailActions(item: LibraryItem) {
@@ -274,6 +351,7 @@ export function LibraryPanel({
         thumbnailSize={thumbnailSize}
         selectedItemIds={selectedItemIds}
         onSelectItem={onSelectItem}
+        onOpenItem={handleOpenViewer}
         onClearSelection={onClearSelection}
         onApplySelectionRect={onApplySelectionRect}
         onRequestUpload={onRequestUpload}
@@ -286,6 +364,19 @@ export function LibraryPanel({
           <span className="drop-overlay-copy">They will be added to the current view.</span>
         </div>
       ) : null}
+
+      <MediaViewerModal
+        item={activeViewerItem}
+        currentIndex={activeViewerIndex}
+        totalItems={items.length}
+        onClose={handleCloseViewer}
+        onPrevious={() => {
+          handleNavigateViewer("previous");
+        }}
+        onNext={() => {
+          handleNavigateViewer("next");
+        }}
+      />
     </main>
   );
 }
