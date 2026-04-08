@@ -8,6 +8,7 @@ import type {
   GuildSummary,
   LibraryItem,
   RenameAlbumInput,
+  SaveLibraryItemMediaEditInput,
   UploadResponse,
 } from "@discasa/shared";
 
@@ -21,7 +22,6 @@ export type DiscasaSetupStatus = {
   isApplied: boolean;
   missingChannels: string[];
 };
-
 
 function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -165,6 +165,16 @@ export async function moveToTrash(itemId: string): Promise<{ item: LibraryItem }
 export async function restoreFromTrash(itemId: string): Promise<{ item: LibraryItem }> {
   return requestJson<{ item: LibraryItem }>(`/api/library/${encodeURIComponent(itemId)}/restore`, {
     method: "PATCH",
+  });
+}
+
+export async function saveLibraryItemMediaEdit(
+  itemId: string,
+  input: SaveLibraryItemMediaEditInput,
+): Promise<{ item: LibraryItem }> {
+  return requestJson<{ item: LibraryItem }>(`/api/library/${encodeURIComponent(itemId)}/media-edit`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
   });
 }
 

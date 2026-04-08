@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import type { LibraryItem } from "@discasa/shared";
+import { getPersistedMediaPresentation } from "../lib/media-edits";
 import type { GalleryDisplayMode } from "../ui-types";
 import { isImage, isVideo } from "../lib/library-helpers";
 
@@ -158,6 +159,7 @@ function FileThumbnail({ item, displayMode, actions }: { item: LibraryItem; disp
   const fallbackLabel = useMemo(() => getFallbackLabel(item), [item]);
   const canRenderImage = isImage(item) && !hasPreviewError;
   const canRenderVideo = isVideo(item) && !hasPreviewError;
+  const persistedMediaPresentation = useMemo(() => getPersistedMediaPresentation(item), [item]);
 
   useEffect(() => {
     if (!canRenderImage || displayMode !== "free") {
@@ -205,7 +207,8 @@ function FileThumbnail({ item, displayMode, actions }: { item: LibraryItem; disp
               draggable={false}
               style={{
                 ...previewMediaStyle,
-                objectFit: displayMode === "square" ? "cover" : "contain",
+                objectFit: displayMode === "square" || persistedMediaPresentation.hasCrop ? "cover" : "contain",
+                transform: `rotate(${persistedMediaPresentation.rotationDegrees}deg)`,
               }}
               onError={() => setHasPreviewError(true)}
             />

@@ -41,6 +41,23 @@ export type RenameAlbumInput = {
   name: string;
 };
 
+export type LibraryItemOriginalSource = {
+  attachmentUrl: string;
+  storageChannelId?: string;
+  storageMessageId?: string;
+};
+
+export type LibraryItemSavedMediaEdit = {
+  rotationDegrees: number;
+  hasCrop: boolean;
+  savedAt: string;
+};
+
+export type SaveLibraryItemMediaEditInput = {
+  rotationDegrees: number;
+  hasCrop: boolean;
+};
+
 export type LibraryItem = {
   id: string;
   name: string;
@@ -55,6 +72,8 @@ export type LibraryItem = {
   isTrashed: boolean;
   storageChannelId?: string;
   storageMessageId?: string;
+  originalSource?: LibraryItemOriginalSource | null;
+  savedMediaEdit?: LibraryItemSavedMediaEdit | null;
 };
 
 export type LibraryItemIndex = Omit<LibraryItem, "albumIds">;

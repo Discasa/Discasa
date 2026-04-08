@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import type { LibraryItem } from "@discasa/shared";
+import { saveLibraryItemMediaEdit } from "../lib/api";
+import {
+  createViewerDraftStateFromItem,
+  hasPendingViewerSave,
+  toMediaEditSaveInput,
+} from "../lib/media-edits";
 import type { GalleryDisplayMode, MouseWheelBehavior, ViewerDraftState, ViewerState } from "../ui-types";
 import "../gallery-stage2.css";
 import { BulkActionBar } from "./BulkActionBar";
@@ -44,15 +50,6 @@ function readStoredMouseWheelBehavior(): MouseWheelBehavior {
 
   const raw = window.localStorage.getItem(VIEWER_MOUSE_WHEEL_BEHAVIOR_KEY);
   return raw === "navigate" ? "navigate" : "zoom";
-}
-
-function createDefaultViewerDraftState(): ViewerDraftState {
-  return {
-    zoomLevel: 1,
-    rotationDegrees: 0,
-    hasCrop: false,
-    canUndo: false,
-  };
 }
 
 function HeartIcon({ filled }: { filled: boolean }) {
@@ -117,8 +114,26 @@ export function LibraryPanel({
 }: LibraryPanelProps) {
   const [galleryDisplayMode, setGalleryDisplayMode] = useState<GalleryDisplayMode>("free");
   const [viewerState, setViewerState] = useState<ViewerState>(null);
-  const [viewerDraftState, setViewerDraftState] = useState<ViewerDraftState>(() => createDefaultViewerDraftState());
-  const [mouseWheelBehavior, setMouseWheelBehavior] = useState<MouseWheelBehavior>(() => readStoredMouseWheelBehavior());
+  const [viewerWheelBehavior, setViewerWheelBehavior] = useState<MouseWheelBehavior>(() => readStoredMouseWheelBehavior());
+  const [viewerDraftState, setViewerDraftState] = useState<ViewerDraftState>(() => createViewerDraftStateFromItem(null));
+  const [isSavingViewerEdit, setIsSavingViewerEdit] = useState(false);
+  const [viewerSaveError, setViewerSaveError] = useState("");
+  const [viewerSaveNotice, setViewerSaveNotice] = useState("");
+  const [itemEditOverrides, setItemEditOverrides] = useState<Record<string, Pick<LibraryItem, "savedMediaEdit" | "originalSource">>>({});
+
+  const displayItems = useMemo(
+    () =>
+      items.map((item) => {
+        const override = itemEditOverrides[item.id];
+        return override
+          ? {
+              ...item,
+              ...override,
+            }
+          : item;
+      }),
+    [itemEditOverrides, items],
+  );
 
   const thumbnailZoomProgress = useMemo(() => {
     if (thumbnailZoomLevelCount <= 1) {
@@ -131,8 +146,8 @@ export function LibraryPanel({
   const selectedItemIdSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
 
   const selectedItems = useMemo(
-    () => items.filter((item) => selectedItemIdSet.has(item.id)),
-    [items, selectedItemIdSet],
+    () => displayItems.filter((item) => selectedItemIdSet.has(item.id)),
+    [displayItems, selectedItemIdSet],
   );
 
   const isTrashSelection = selectedItems.length > 0 && selectedItems.every((item) => item.isTrashed);
@@ -143,56 +158,68 @@ export function LibraryPanel({
       return -1;
     }
 
-    return items.findIndex((item) => item.id === viewerState.itemId);
-  }, [items, viewerState]);
+    return displayItems.findIndex((item) => item.id === viewerState.itemId);
+  }, [displayItems, viewerState]);
 
-  const activeViewerItem = activeViewerIndex >= 0 ? items[activeViewerIndex] ?? null : null;
+  const activeViewerItem = activeViewerIndex >= 0 ? displayItems[activeViewerIndex] ?? null : null;
+  const viewerHasPendingSave = hasPendingViewerSave(activeViewerItem, viewerDraftState);
 
   useEffect(() => {
-    const handleWheelBehaviorChange = (event: Event) => {
-      const detail = (event as CustomEvent<MouseWheelBehavior>).detail;
-      setMouseWheelBehavior(detail === "navigate" ? "navigate" : "zoom");
+    const handleViewerWheelBehaviorChange = (event: Event) => {
+      const customEvent = event as CustomEvent<MouseWheelBehavior>;
+      if (customEvent.detail === "navigate" || customEvent.detail === "zoom") {
+        setViewerWheelBehavior(customEvent.detail);
+      } else {
+        setViewerWheelBehavior(readStoredMouseWheelBehavior());
+      }
     };
 
-    window.addEventListener(VIEWER_WHEEL_BEHAVIOR_EVENT, handleWheelBehaviorChange as EventListener);
-    return () => {
-      window.removeEventListener(VIEWER_WHEEL_BEHAVIOR_EVENT, handleWheelBehaviorChange as EventListener);
-    };
+    window.addEventListener(VIEWER_WHEEL_BEHAVIOR_EVENT, handleViewerWheelBehaviorChange as EventListener);
+    return () => window.removeEventListener(VIEWER_WHEEL_BEHAVIOR_EVENT, handleViewerWheelBehaviorChange as EventListener);
   }, []);
 
   useEffect(() => {
     if (!viewerState) {
-      setViewerDraftState(createDefaultViewerDraftState());
+      setViewerDraftState(createViewerDraftStateFromItem(null));
+      setViewerSaveError("");
+      setViewerSaveNotice("");
       return;
     }
 
-    if (items.length === 0) {
+    if (!activeViewerItem) {
       setViewerState(null);
       return;
     }
 
-    const nextIndex = items.findIndex((item) => item.id === viewerState.itemId);
+    setViewerDraftState(createViewerDraftStateFromItem(activeViewerItem));
+    setViewerSaveError("");
+    setViewerSaveNotice("");
+  }, [activeViewerItem?.id, viewerState]);
+
+  useEffect(() => {
+    if (!viewerState) {
+      return;
+    }
+
+    if (displayItems.length === 0) {
+      setViewerState(null);
+      return;
+    }
+
+    const nextIndex = displayItems.findIndex((item) => item.id === viewerState.itemId);
     if (nextIndex === -1) {
       setViewerState(null);
       return;
     }
 
-    if (viewerState.index !== nextIndex || viewerState.total !== items.length) {
+    if (viewerState.index !== nextIndex || viewerState.total !== displayItems.length) {
       setViewerState({
-        itemId: items[nextIndex]?.id ?? viewerState.itemId,
+        itemId: displayItems[nextIndex]?.id ?? viewerState.itemId,
         index: nextIndex,
-        total: items.length,
+        total: displayItems.length,
       });
     }
-  }, [items, viewerState]);
-
-  useEffect(() => {
-    if (!viewerState) {
-      return;
-    }
-
-    setViewerDraftState(createDefaultViewerDraftState());
-  }, [viewerState?.itemId]);
+  }, [displayItems, viewerState]);
 
   async function handleBulkFavoriteToggle(): Promise<void> {
     if (isBusy || selectedItems.length === 0) {
@@ -232,23 +259,21 @@ export function LibraryPanel({
   }
 
   function handleOpenViewer(itemId: string): void {
-    const index = items.findIndex((item) => item.id === itemId);
+    const index = displayItems.findIndex((item) => item.id === itemId);
 
     if (index === -1) {
       return;
     }
 
-    setViewerDraftState(createDefaultViewerDraftState());
     setViewerState({
       itemId,
       index,
-      total: items.length,
+      total: displayItems.length,
     });
   }
 
   function handleCloseViewer(): void {
     setViewerState(null);
-    setViewerDraftState(createDefaultViewerDraftState());
   }
 
   function handleNavigateViewer(direction: "previous" | "next"): void {
@@ -256,22 +281,47 @@ export function LibraryPanel({
       return;
     }
 
-    const currentIndex = items.findIndex((item) => item.id === viewerState.itemId);
+    const currentIndex = displayItems.findIndex((item) => item.id === viewerState.itemId);
     if (currentIndex === -1) {
       return;
     }
 
     const nextIndex = direction === "previous" ? currentIndex - 1 : currentIndex + 1;
-    if (nextIndex < 0 || nextIndex >= items.length) {
+    if (nextIndex < 0 || nextIndex >= displayItems.length) {
       return;
     }
 
-    setViewerDraftState(createDefaultViewerDraftState());
     setViewerState({
-      itemId: items[nextIndex]?.id ?? viewerState.itemId,
+      itemId: displayItems[nextIndex]?.id ?? viewerState.itemId,
       index: nextIndex,
-      total: items.length,
+      total: displayItems.length,
     });
+  }
+
+  async function handleSaveViewerEdit(): Promise<void> {
+    if (!activeViewerItem || !activeViewerItem.mimeType.startsWith("image/") || isSavingViewerEdit || !viewerHasPendingSave) {
+      return;
+    }
+
+    setIsSavingViewerEdit(true);
+    setViewerSaveError("");
+    setViewerSaveNotice("");
+
+    try {
+      const response = await saveLibraryItemMediaEdit(activeViewerItem.id, toMediaEditSaveInput(viewerDraftState));
+      setItemEditOverrides((current) => ({
+        ...current,
+        [activeViewerItem.id]: {
+          savedMediaEdit: response.item.savedMediaEdit ?? null,
+          originalSource: response.item.originalSource ?? null,
+        },
+      }));
+      setViewerSaveNotice(response.item.savedMediaEdit ? "Edits saved for this image." : "Image restored to the original view.");
+    } catch (caughtError) {
+      setViewerSaveError(caughtError instanceof Error ? caughtError.message : "Could not save the image edits.");
+    } finally {
+      setIsSavingViewerEdit(false);
+    }
   }
 
   function renderThumbnailActions(item: LibraryItem) {
@@ -392,7 +442,7 @@ export function LibraryPanel({
       </div>
 
       <GalleryGrid
-        items={items}
+        items={displayItems}
         isBusy={isBusy}
         displayMode={galleryDisplayMode}
         thumbnailSize={thumbnailSize}
@@ -415,10 +465,17 @@ export function LibraryPanel({
       <MediaViewerModal
         item={activeViewerItem}
         currentIndex={activeViewerIndex}
-        totalItems={items.length}
-        wheelBehavior={mouseWheelBehavior}
+        totalItems={displayItems.length}
+        wheelBehavior={viewerWheelBehavior}
         draftState={viewerDraftState}
+        hasPendingSave={viewerHasPendingSave}
+        isSaving={isSavingViewerEdit}
+        saveError={viewerSaveError}
+        saveNotice={viewerSaveNotice}
         onDraftStateChange={setViewerDraftState}
+        onSave={() => {
+          void handleSaveViewerEdit();
+        }}
         onClose={handleCloseViewer}
         onPrevious={() => {
           handleNavigateViewer("previous");

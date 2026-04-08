@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import type { LibraryItem, SaveLibraryItemMediaEditInput } from "@discasa/shared";
 import { env } from "../lib/env";
 import { getDiscordUploadLimitForGuild, getUploadTooLargeMessage } from "../lib/discordUploadLimit";
 import {
@@ -30,6 +31,12 @@ import {
   updateLibraryItemStorage,
 } from "../lib/store";
 import {
+  attachMediaEditToLibraryItem,
+  attachMediaEditsToLibraryItems,
+  deleteLibraryItemMediaEdit,
+  saveLibraryItemMediaEdit,
+} from "../lib/mediaEditStore";
+import {
   deleteStoredItemFromDiscord,
   hasCurrentConfigSnapshot,
   hasCurrentFolderSnapshot,
@@ -50,6 +57,14 @@ import {
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+function withMediaEdit(item: LibraryItem | null): LibraryItem | null {
+  if (!item) {
+    return null;
+  }
+
+  return attachMediaEditToLibraryItem(item);
+}
 
 async function syncRemoteIndexState(): Promise<void> {
   const context = getActiveStorageContext();
@@ -80,6 +95,26 @@ async function syncRemoteConfigState(): Promise<void> {
 
 async function syncRemoteLibraryState(): Promise<void> {
   await Promise.all([syncRemoteIndexState(), syncRemoteFolderState()]);
+}
+
+function normalizeMediaEditInput(raw: unknown): SaveLibraryItemMediaEditInput | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const entry = raw as Record<string, unknown>;
+  if (
+    typeof entry.rotationDegrees !== "number" ||
+    !Number.isFinite(entry.rotationDegrees) ||
+    typeof entry.hasCrop !== "boolean"
+  ) {
+    return null;
+  }
+
+  return {
+    rotationDegrees: entry.rotationDegrees,
+    hasCrop: entry.hasCrop,
+  };
 }
 
 router.get("/session", (request, response) => {
@@ -117,7 +152,6 @@ router.get("/guilds", async (request, response, next) => {
     next(error);
   }
 });
-
 
 router.get("/discasa/status", async (request, response, next) => {
   try {
@@ -343,7 +377,7 @@ router.delete("/albums/:albumId", async (request, response, next) => {
 });
 
 router.get("/library", (_request, response) => {
-  response.json(getLibraryItems());
+  response.json(attachMediaEditsToLibraryItems(getLibraryItems()));
 });
 
 router.post("/upload", upload.array("files"), async (request, response, next) => {
@@ -359,7 +393,7 @@ router.post("/upload", upload.array("files"), async (request, response, next) =>
     if (env.mockMode) {
       const uploaded = addMockFiles(files, albumId);
       await syncRemoteLibraryState();
-      response.status(201).json({ uploaded });
+      response.status(201).json({ uploaded: attachMediaEditsToLibraryItems(uploaded) });
       return;
     }
 
@@ -383,7 +417,7 @@ router.post("/upload", upload.array("files"), async (request, response, next) =>
     const uploadedRecords = await uploadFilesToDiscordDrive(files, activeStorage);
     const uploaded = addUploadedFiles(uploadedRecords, albumId);
     await syncRemoteLibraryState();
-    response.status(201).json({ uploaded });
+    response.status(201).json({ uploaded: attachMediaEditsToLibraryItems(uploaded) });
   } catch (error) {
     next(error);
   }
@@ -400,7 +434,7 @@ router.patch("/library/:itemId/favorite", async (request, response, next) => {
     }
 
     await syncRemoteIndexState();
-    response.json({ item });
+    response.json({ item: withMediaEdit(item) });
   } catch (error) {
     next(error);
   }
@@ -440,7 +474,7 @@ router.patch("/library/:itemId/trash", async (request, response, next) => {
     }
 
     await syncRemoteIndexState();
-    response.json({ item });
+    response.json({ item: withMediaEdit(item) });
   } catch (error) {
     next(error);
   }
@@ -480,6 +514,34 @@ router.patch("/library/:itemId/restore", async (request, response, next) => {
     }
 
     await syncRemoteIndexState();
+    response.json({ item: withMediaEdit(item) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/library/:itemId/media-edit", async (request, response, next) => {
+  try {
+    const itemId = String(request.params.itemId ?? "");
+    const input = normalizeMediaEditInput(request.body);
+
+    if (!itemId || !input) {
+      response.status(400).json({ error: "rotationDegrees and hasCrop are required" });
+      return;
+    }
+
+    const originalItem = getLibraryItem(itemId);
+    if (!originalItem) {
+      response.status(404).json({ error: "Library item not found" });
+      return;
+    }
+
+    if (!originalItem.mimeType.startsWith("image/")) {
+      response.status(400).json({ error: "Only image items currently support saved edits." });
+      return;
+    }
+
+    const item = saveLibraryItemMediaEdit(originalItem, input);
     response.json({ item });
   } catch (error) {
     next(error);
@@ -505,6 +567,8 @@ router.delete("/library/:itemId", async (request, response, next) => {
 
       await deleteStoredItemFromDiscord(activeStorage, originalItem);
     }
+
+    deleteLibraryItemMediaEdit(itemId);
 
     const deleted = deleteLibraryItem(itemId);
 

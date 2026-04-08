@@ -9,7 +9,12 @@ type MediaViewerModalProps = {
   totalItems: number;
   wheelBehavior: MouseWheelBehavior;
   draftState: ViewerDraftState;
+  hasPendingSave: boolean;
+  isSaving: boolean;
+  saveError: string;
+  saveNotice: string;
   onDraftStateChange: (nextState: ViewerDraftState) => void;
+  onSave: () => void;
   onClose: () => void;
   onPrevious: () => void;
   onNext: () => void;
@@ -128,7 +133,12 @@ export function MediaViewerModal({
   totalItems,
   wheelBehavior,
   draftState,
+  hasPendingSave,
+  isSaving,
+  saveError,
+  saveNotice,
   onDraftStateChange,
+  onSave,
   onClose,
   onPrevious,
   onNext,
@@ -185,8 +195,8 @@ export function MediaViewerModal({
     onDraftStateChange(
       normalizeDraftState({
         zoomLevel: 1,
-        rotationDegrees: 0,
-        hasCrop: false,
+        rotationDegrees: item?.savedMediaEdit?.rotationDegrees ?? 0,
+        hasCrop: item?.savedMediaEdit?.hasCrop ?? false,
       }),
     );
   }
@@ -370,12 +380,13 @@ export function MediaViewerModal({
 
               <button
                 type="button"
-                className="media-viewer-control-button disabled"
-                disabled
-                title="Persistent save will be enabled in the next editing step."
+                className={`media-viewer-control-button save-button ${hasPendingSave ? "active" : ""}`}
+                onClick={onSave}
+                disabled={!hasPendingSave || isSaving}
+                title={hasPendingSave ? "Save image edits" : "No unsaved image edits"}
               >
                 <span className="media-viewer-control-icon"><SaveIcon /></span>
-                <span className="media-viewer-control-label">Save</span>
+                <span className="media-viewer-control-label">{isSaving ? "Saving..." : "Save"}</span>
               </button>
             </div>
           ) : (
@@ -384,8 +395,12 @@ export function MediaViewerModal({
             </div>
           )}
 
-          <div className="media-viewer-zoom-readout" aria-live="polite">
-            {imageMode ? `${Math.round(draftState.zoomLevel * 100)}% • Wheel: ${wheelBehavior === "zoom" ? "Zoom" : "Navigate"}` : "Preview"}
+          <div className="media-viewer-footer-meta">
+            {saveError ? <span className="media-viewer-save-status error">{saveError}</span> : null}
+            {!saveError && saveNotice ? <span className="media-viewer-save-status success">{saveNotice}</span> : null}
+            <div className="media-viewer-zoom-readout" aria-live="polite">
+              {imageMode ? `${Math.round(draftState.zoomLevel * 100)}% • Wheel: ${wheelBehavior === "zoom" ? "Zoom" : "Navigate"}` : "Preview"}
+            </div>
           </div>
         </footer>
       </div>
