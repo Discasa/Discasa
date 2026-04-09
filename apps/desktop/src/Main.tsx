@@ -3,6 +3,16 @@ import ReactDOM from "react-dom/client";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type MouseEvent } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
+import {
+  DISCASA_DEFAULT_CONFIG,
+  type AlbumRecord,
+  type AppSession,
+  type DiscasaAttachmentRecoveryWarning,
+  type DiscasaConfig,
+  type GuildSummary,
+  type LibraryItem,
+  type SaveLibraryItemMediaEditInput,
+} from "@discasa/shared";
 import logoUrl from "./assets/discasa-logo.png";
 import "./styles.css";
 import {
