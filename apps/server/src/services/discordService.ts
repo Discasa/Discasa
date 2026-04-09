@@ -838,6 +838,7 @@ export async function refreshIndexSnapshotAttachmentUrls(
 
   const nextItems: LibraryItemIndex[] = [];
   const unresolvedItems: DiscasaAttachmentRecoveryWarning[] = [];
+  const checkedItemCount = snapshot.items.length;
   let relinkedItemCount = 0;
   let didChange = false;
 
@@ -884,8 +885,10 @@ export async function refreshIndexSnapshotAttachmentUrls(
     nextItems.push(nextItem);
   }
 
+  const alreadyValidItemCount = checkedItemCount - relinkedItemCount - unresolvedItems.length;
+
   console.info(
-    `[Discasa recovery] Completed attachment relink. Refreshed ${relinkedItemCount} item(s); unresolved ${unresolvedItems.length}.`,
+    `[Discasa recovery] Summary | Checked: ${checkedItemCount} | Relinked: ${relinkedItemCount} | Already valid: ${alreadyValidItemCount} | Unresolved: ${unresolvedItems.length}`,
   );
 
   return {
