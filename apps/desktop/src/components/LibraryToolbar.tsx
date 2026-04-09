@@ -1,6 +1,6 @@
 import type { CSSProperties, ChangeEvent, ReactNode } from "react";
 import type { GalleryDisplayMode } from "../ui-types";
-import { GalleryModeIcon, UploadIcon, ZoomIcon } from "./icons";
+import { GalleryModeIcon, UploadIcon, ZoomIcon } from "./Icons";
 
 type LibraryToolbarProps = {
   galleryDisplayMode: GalleryDisplayMode;

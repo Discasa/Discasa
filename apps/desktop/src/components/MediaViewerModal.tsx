@@ -2,6 +2,19 @@ import { useEffect, useMemo, useRef, type WheelEvent } from "react";
 import type { LibraryItem } from "@discasa/shared";
 import type { MouseWheelBehavior, ViewerDraftState } from "../ui-types";
 import { isImage, isVideo } from "../lib/library-helpers";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CloseIcon,
+  CropIcon,
+  RestoreOriginalIcon,
+  RotateLeftIcon,
+  RotateRightIcon,
+  SaveIcon,
+  UndoIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+} from "./Icons";
 
 type MediaViewerModalProps = {
   item: LibraryItem | null;
@@ -20,105 +33,6 @@ type MediaViewerModalProps = {
   onPrevious: () => void;
   onNext: () => void;
 };
-
-function CloseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ArrowLeftIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="m14.5 6-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ArrowRightIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ZoomInIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="10.5" cy="10.5" r="4.75" fill="none" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M15 15 19 19" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path d="M10.5 8.1v4.8M8.1 10.5h4.8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ZoomOutIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="10.5" cy="10.5" r="4.75" fill="none" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M15 15 19 19" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path d="M8.1 10.5h4.8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function RotateLeftIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7 5v4h4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M7.5 9A7 7 0 1 1 5 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function RotateRightIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M17 5v4h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M16.5 9A7 7 0 1 0 19 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CropIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7 4.5v10.25A2.25 2.25 0 0 0 9.25 17H19.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M17 19.5V9.25A2.25 2.25 0 0 0 14.75 7H4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function UndoIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 7H4v5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M4.5 12A7.5 7.5 0 1 1 12 19.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SaveIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6 4.75h9.75L19.25 8v11.25H6Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      <path d="M9 4.75v5.5h6v-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      <path d="M9 19.25v-4.5h6v4.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function RestoreOriginalIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 10H4V5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M4.6 10A8 8 0 1 0 12 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 function clampZoom(value: number): number {
   return Math.min(5, Math.max(1, Number(value.toFixed(2))));
@@ -174,9 +88,8 @@ export function MediaViewerModal({
 }: MediaViewerModalProps) {
   const lastWheelNavigationAtRef = useRef(0);
   const isOpen = Boolean(item);
-  const attachmentUnavailable = item?.attachmentStatus === "missing";
-  const imageMode = item ? isImage(item) && !attachmentUnavailable : false;
-  const videoMode = item ? isVideo(item) && !attachmentUnavailable : false;
+  const imageMode = item ? isImage(item) : false;
+  const videoMode = item ? isVideo(item) : false;
   const hasSavedEdit = Boolean(item?.savedMediaEdit);
   const hasOriginalSource = Boolean(item?.originalSource);
   const savedAtLabel = formatSavedAt(item?.savedMediaEdit?.savedAt);
@@ -367,7 +280,6 @@ export function MediaViewerModal({
               <span className="media-viewer-counter">
                 {currentIndex + 1} / {totalItems}
               </span>
-              {attachmentUnavailable ? <span className="media-viewer-missing-chip">Attachment unavailable</span> : null}
               {hasSavedEdit ? <span className="media-viewer-edit-chip">Edited</span> : null}
               {hasOriginalSource ? <span className="media-viewer-original-chip">Original preserved</span> : null}
               {savedAtLabel ? <span className="media-viewer-saved-at">Saved {savedAtLabel}</span> : null}
@@ -426,11 +338,6 @@ export function MediaViewerModal({
                   {(item.name.split(".").pop() || "FILE").slice(0, 5).toUpperCase()}
                 </span>
                 <span className="media-viewer-file-name">{item.name}</span>
-                {attachmentUnavailable ? (
-                  <span className="media-viewer-file-warning">
-                    This file is still indexed, but the live Discord attachment could not be found.
-                  </span>
-                ) : null}
               </div>
             ) : null}
           </div>
@@ -537,7 +444,7 @@ export function MediaViewerModal({
             </div>
           ) : (
             <div className="media-viewer-info-chip">
-              {attachmentUnavailable ? "Attachment unavailable" : videoMode ? "Video preview" : "File preview"}
+              {videoMode ? "Video preview" : "File preview"}
             </div>
           )}
 
@@ -553,7 +460,7 @@ export function MediaViewerModal({
               {hasSavedEdit ? <span>O Original</span> : null}
             </div>
             <div className="media-viewer-zoom-readout" aria-live="polite">
-              {imageMode ? `${Math.round(draftState.zoomLevel * 100)}% • Wheel: ${wheelBehavior === "zoom" ? "Zoom" : "Navigate"}` : attachmentUnavailable ? "Attachment unavailable" : "Preview"}
+              {imageMode ? `${Math.round(draftState.zoomLevel * 100)}% • Wheel: ${wheelBehavior === "zoom" ? "Zoom" : "Navigate"}` : "Preview"}
             </div>
           </div>
         </footer>

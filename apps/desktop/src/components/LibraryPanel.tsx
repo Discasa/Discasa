@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
-import type { DiscasaAttachmentRecoveryWarning, LibraryItem, SaveLibraryItemMediaEditInput } from "@discasa/shared";
+import type { LibraryItem, SaveLibraryItemMediaEditInput } from "@discasa/shared";
 import {
   createViewerDraftStateFromItem,
   hasPendingViewerSave,
@@ -11,13 +11,13 @@ import { BulkActionBar } from "./BulkActionBar";
 import { LibraryToolbar } from "./LibraryToolbar";
 import { GalleryGrid } from "./GalleryGrid";
 import { MediaViewerModal } from "./MediaViewerModal";
+import { HeartIcon, RestoreIcon, TrashIcon } from "./Icons";
 import { stopActionEvent } from "./GalleryItem";
 
 type LibraryPanelProps = {
   title: string;
   description: string;
   items: LibraryItem[];
-  attachmentWarnings: DiscasaAttachmentRecoveryWarning[];
   selectedItemIds: string[];
   isBusy: boolean;
   isDraggingFiles: boolean;
@@ -42,46 +42,10 @@ type LibraryPanelProps = {
   onDeleteItem: (itemId: string) => Promise<void>;
 };
 
-function HeartIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path
-        d="M12 20.7 4.85 13.9a4.95 4.95 0 0 1 0-7.15 5.15 5.15 0 0 1 7.15 0L12 7.75l1-1a5.15 5.15 0 0 1 7.15 0 4.95 4.95 0 0 1 0 7.15Z"
-        fill={filled ? "currentColor" : "none"}
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M4 7h16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M9 4h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M8 7v11a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M10 11v5M14 11v5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function RestoreIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M9 10H4V5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M4.6 10A8 8 0 1 0 12 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 export function LibraryPanel({
   title,
   description,
   items,
-  attachmentWarnings,
   selectedItemIds,
   isBusy,
   isDraggingFiles,
@@ -114,21 +78,6 @@ export function LibraryPanel({
   const [viewerSaveNotice, setViewerSaveNotice] = useState("");
 
   const displayItems = items;
-
-  const attachmentWarningSummary = useMemo(() => {
-    if (attachmentWarnings.length === 0) {
-      return "";
-    }
-
-    const visibleNames = attachmentWarnings.slice(0, 3).map((warning) => warning.itemName);
-    const hiddenCount = attachmentWarnings.length - visibleNames.length;
-
-    if (hiddenCount > 0) {
-      return `${visibleNames.join(", ")} and ${hiddenCount} more.`;
-    }
-
-    return `${visibleNames.join(", ")}.`;
-  }, [attachmentWarnings]);
 
   const thumbnailZoomProgress = useMemo(() => {
     if (thumbnailZoomLevelCount <= 1) {
@@ -407,7 +356,7 @@ export function LibraryPanel({
           aria-label={item.isFavorite ? "Unfavorite" : "Favorite"}
           title={item.isFavorite ? "Unfavorite" : "Favorite"}
         >
-          <HeartIcon filled={item.isFavorite} />
+          <HeartIcon />
         </button>
         <button
           type="button"
@@ -476,16 +425,6 @@ export function LibraryPanel({
           onRequestUpload={onRequestUpload}
         />
       </div>
-
-      {attachmentWarnings.length > 0 ? (
-        <div className="library-warning-banner" role="status" aria-live="polite">
-          <strong className="library-warning-title">Some indexed files could not be relinked to Discord.</strong>
-          <span className="library-warning-copy">
-            {attachmentWarnings.length} item(s) are still listed in the library index, but their live attachments were not found in the Discasa channels.
-          </span>
-          <span className="library-warning-copy compact">{attachmentWarningSummary}</span>
-        </div>
-      ) : null}
 
       <GalleryGrid
         items={displayItems}

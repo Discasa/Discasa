@@ -1,7 +1,7 @@
 import type { MouseEvent } from "react";
 import type { AlbumRecord } from "@discasa/shared";
 import type { SidebarView } from "../ui-types";
-import { ChevronLeftDoubleIcon, ChevronRightDoubleIcon, FolderIcon, HeartIcon, LibraryIcon, PictureIcon, PlusIcon, TrashIcon, VideoIcon } from "./icons";
+import { ChevronLeftDoubleIcon, ChevronRightDoubleIcon, FolderIcon, HeartIcon, LibraryIcon, PictureIcon, PlusIcon, TrashIcon, VideoIcon } from "./Icons";
 import { ProfileAvatar } from "./ProfileAvatar";
 
 const libraryEntries = [

@@ -1,5 +1,5 @@
 import type { MouseEvent } from "react";
-import { SettingsIcon } from "./icons";
+import { SettingsIcon } from "./Icons";
 import type { WindowState } from "../ui-types";
 
 type TitlebarProps = {

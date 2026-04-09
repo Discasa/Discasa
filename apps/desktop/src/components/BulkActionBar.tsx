@@ -1,4 +1,4 @@
-import { CloseSmallIcon, FolderStackIcon, HeartIcon, RestoreIcon, TrashIcon } from "./icons";
+import { CloseSmallIcon, FolderStackIcon, HeartIcon, RestoreIcon, TrashIcon } from "./Icons";
 
 type BulkActionBarProps = {
   selectedCount: number;
