@@ -23,16 +23,23 @@ import {
   type SaveLibraryItemMediaEditInput,
 } from "@discasa/shared";
 import defaultAvatarUrl from "../assets/discasa-default-avatar.png";
-import { logoutDiscord } from "../lib/api";
-import { type HsvColor, clampNumber, hexToHsv, hsvToHex, normalizeHexColor } from "../lib/color";
-import { isImage, isVideo } from "../lib/library-helpers";
 import {
+  logoutDiscord,
+  clampNumber,
+  hexToHsv,
+  hsvToHex,
+  normalizeHexColor,
+  isImage,
+  isVideo,
   createViewerDraftStateFromItem,
   getPersistedMediaPresentation,
   hasPendingViewerSave,
   toMediaEditSaveInput,
-} from "../lib/media-edits";
-import { commitMouseWheelBehavior, readStoredMouseWheelBehavior, VIEWER_WHEEL_BEHAVIOR_EVENT } from "../lib/ui-preferences";
+  commitMouseWheelBehavior,
+  readStoredMouseWheelBehavior,
+  VIEWER_WHEEL_BEHAVIOR_EVENT,
+  type HsvColor,
+} from "../lib/Lib";
 import type {
   AlbumContextMenuState,
   GalleryDisplayMode,

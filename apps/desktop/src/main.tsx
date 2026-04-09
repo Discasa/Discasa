@@ -35,7 +35,18 @@ import {
   toggleFavorite,
   updateAppConfig,
   uploadFiles,
-} from "./lib/api";
+  DEFAULT_PROFILE,
+  getCurrentDescription,
+  getCurrentTitle,
+  getVisibleItems,
+  clampNumber,
+  hexToRgbChannels,
+  normalizeHexColor,
+  tintHexColor,
+  readStoredBoolean,
+  readStoredNumber,
+  readStoredString,
+} from "./lib/Lib";
 import logoUrl from "./assets/discasa-logo.png";
 import "./styles.css";
 import "./recovery.css";
@@ -52,9 +63,6 @@ import {
   StatusToast,
   Titlebar,
 } from "./components/Components";
-import { DEFAULT_PROFILE, getCurrentDescription, getCurrentTitle, getVisibleItems } from "./lib/library-helpers";
-import { clampNumber, hexToRgbChannels, normalizeHexColor, tintHexColor } from "./lib/color";
-import { readStoredBoolean, readStoredNumber, readStoredString } from "./lib/ui-preferences";
 import type { AlbumContextMenuState, SettingsSection, SidebarView, WindowState } from "./ui-types";
 
 const appWindow = getCurrentWindow();
