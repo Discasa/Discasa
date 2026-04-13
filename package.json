@@ -11,8 +11,7 @@
     "dev:server": "npm --workspace @discasa/server run dev",
     "build:desktop": "npm --workspace @discasa/desktop run build",
     "build:server": "npm --workspace @discasa/server run build",
-    "check": "npm --workspace @discasa/desktop run check && npm --workspace @discasa/server run check",
-    "migrate:legacy-media-edits": "npm --workspace @discasa/server run migrate:legacy-media-edits"
+    "check": "npm --workspace @discasa/desktop run check && npm --workspace @discasa/server run check"
   },
   "engines": {
     "node": ">=20.0.0"
