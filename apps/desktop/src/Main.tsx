@@ -144,6 +144,10 @@ export function App() {
   const [newAlbumName, setNewAlbumName] = useState("");
   const [isCreatingAlbum, setIsCreatingAlbum] = useState(false);
   const [createAlbumError, setCreateAlbumError] = useState("");
+  const [renameAlbumTarget, setRenameAlbumTarget] = useState<{ id: string; currentName: string } | null>(null);
+  const [renameAlbumName, setRenameAlbumName] = useState("");
+  const [isRenamingAlbum, setIsRenamingAlbum] = useState(false);
+  const [renameAlbumError, setRenameAlbumError] = useState("");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("discord");
   const [sessionName, setSessionName] = useState<string | null>(null);
   const [sessionAvatarUrl, setSessionAvatarUrl] = useState<string | null>(null);
@@ -189,6 +193,7 @@ export function App() {
   const dragDepthRef = useRef(0);
   const closeToTrayRef = useRef(closeToTray);
   const createAlbumInputRef = useRef<HTMLInputElement | null>(null);
+  const renameAlbumInputRef = useRef<HTMLInputElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const albumsRef = useRef<AlbumRecord[]>([]);
   const selectedViewRef = useRef<SidebarView>(selectedView);
@@ -319,7 +324,18 @@ export function App() {
   }, [isCreateAlbumOpen]);
 
   useEffect(() => {
-    if (!isSettingsOpen && !isCreateAlbumOpen && !deleteAlbumTarget && !deleteFileTarget) return;
+    if (!renameAlbumTarget) return;
+
+    const timer = window.setTimeout(() => {
+      renameAlbumInputRef.current?.focus();
+      renameAlbumInputRef.current?.select();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [renameAlbumTarget]);
+
+  useEffect(() => {
+    if (!isSettingsOpen && !isCreateAlbumOpen && !renameAlbumTarget && !deleteAlbumTarget && !deleteFileTarget) return;
 
     const handleEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -334,6 +350,13 @@ export function App() {
       if (deleteAlbumTarget) {
         if (!isDeletingAlbum) {
           closeDeleteAlbumModal();
+        }
+        return;
+      }
+
+      if (renameAlbumTarget) {
+        if (!isRenamingAlbum) {
+          closeRenameAlbumModal();
         }
         return;
       }
@@ -353,7 +376,16 @@ export function App() {
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [isSettingsOpen, isCreateAlbumOpen, deleteAlbumTarget, isDeletingAlbum, deleteFileTarget, isDeletingFile]);
+  }, [
+    isSettingsOpen,
+    isCreateAlbumOpen,
+    renameAlbumTarget,
+    isRenamingAlbum,
+    deleteAlbumTarget,
+    isDeletingAlbum,
+    deleteFileTarget,
+    isDeletingFile,
+  ]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -723,6 +755,20 @@ export function App() {
     setNewAlbumName("");
   }
 
+  function openRenameAlbumModal(albumId: string, currentName: string): void {
+    setAlbumContextMenu(null);
+    setRenameAlbumError("");
+    setRenameAlbumTarget({ id: albumId, currentName });
+    setRenameAlbumName(currentName);
+  }
+
+  function closeRenameAlbumModal(): void {
+    if (isRenamingAlbum) return;
+    setRenameAlbumTarget(null);
+    setRenameAlbumError("");
+    setRenameAlbumName("");
+  }
+
   function requestUpload(): void {
     uploadInputRef.current?.click();
   }
@@ -782,21 +828,42 @@ export function App() {
     }
   }
 
-  async function handleRenameAlbum(albumId: string, currentName: string): Promise<void> {
-    const nextName = window.prompt("New album name:", currentName);
-    if (!nextName || !nextName.trim()) return;
+  async function handleRenameAlbumSubmit(event?: FormEvent<HTMLFormElement>): Promise<void> {
+    event?.preventDefault();
+
+    if (!renameAlbumTarget) {
+      return;
+    }
+
+    const trimmed = renameAlbumName.trim();
+    if (!trimmed) {
+      setRenameAlbumError("Enter an album name.");
+      return;
+    }
+
+    if (trimmed === renameAlbumTarget.currentName.trim()) {
+      closeRenameAlbumModal();
+      return;
+    }
+
+    setIsRenamingAlbum(true);
+    setRenameAlbumError("");
 
     try {
-      const trimmed = nextName.trim();
-      await renameAlbum(albumId, { name: trimmed });
-      const nextAlbums = albumsRef.current.map((album) => (album.id === albumId ? { ...album, name: trimmed } : album));
+      await renameAlbum(renameAlbumTarget.id, { name: trimmed });
+      const nextAlbums = albumsRef.current.map((album) =>
+        album.id === renameAlbumTarget.id ? { ...album, name: trimmed } : album,
+      );
       albumsRef.current = nextAlbums;
       setAlbums(nextAlbums);
-      setAlbumContextMenu(null);
       setMessage(`Album renamed to: ${trimmed}`);
       setError("");
+      setRenameAlbumTarget(null);
+      setRenameAlbumName("");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not rename the album.");
+      setRenameAlbumError(caughtError instanceof Error ? caughtError.message : "Could not rename the album.");
+    } finally {
+      setIsRenamingAlbum(false);
     }
   }
 
@@ -1390,6 +1457,23 @@ export function App() {
         />
       ) : null}
 
+      {renameAlbumTarget ? (
+        <RenameAlbumModal
+          isRenamingAlbum={isRenamingAlbum}
+          albumName={renameAlbumName}
+          renameAlbumError={renameAlbumError}
+          inputRef={renameAlbumInputRef}
+          onClose={closeRenameAlbumModal}
+          onSubmit={handleRenameAlbumSubmit}
+          onChangeName={(value) => {
+            setRenameAlbumName(value);
+            if (renameAlbumError) {
+              setRenameAlbumError("");
+            }
+          }}
+        />
+      ) : null}
+
       {deleteFileTarget ? (
         <DeleteFileModal
           fileName={deleteFileTarget.name}
@@ -1431,11 +1515,12 @@ export function App() {
         menu={albumContextMenu}
         canMoveUp={albumContextMenu ? canMoveAlbum(albumContextMenu.albumId, "up") : false}
         canMoveDown={albumContextMenu ? canMoveAlbum(albumContextMenu.albumId, "down") : false}
-        onRename={() =>
-          albumContextMenu
-            ? handleRenameAlbum(albumContextMenu.albumId, albumContextMenu.albumName)
-            : Promise.resolve()
-        }
+        onRename={() => {
+          if (albumContextMenu) {
+            openRenameAlbumModal(albumContextMenu.albumId, albumContextMenu.albumName);
+          }
+          return Promise.resolve();
+        }}
         onMoveUp={() => (albumContextMenu ? handleMoveAlbum(albumContextMenu.albumId, "up") : Promise.resolve())}
         onMoveDown={() => (albumContextMenu ? handleMoveAlbum(albumContextMenu.albumId, "down") : Promise.resolve())}
         onDelete={() => {
@@ -1892,6 +1977,71 @@ export function AlbumModal({
         <div className="album-modal-actions">
           <button type="submit" className="pill-button accent-button album-modal-confirm" disabled={isCreatingAlbum}>
             {isCreatingAlbum ? "Creating..." : "OK"}
+          </button>
+        </div>
+      </form>
+    </BaseModal>
+  );
+}
+
+type RenameAlbumModalProps = {
+  isRenamingAlbum: boolean;
+  albumName: string;
+  renameAlbumError: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onChangeName: (value: string) => void;
+};
+
+export function RenameAlbumModal({
+  isRenamingAlbum,
+  albumName,
+  renameAlbumError,
+  inputRef,
+  onClose,
+  onSubmit,
+  onChangeName,
+}: RenameAlbumModalProps) {
+  return (
+    <BaseModal
+      rootClassName="album-modal-root"
+      backdropClassName="album-modal-backdrop"
+      panelClassName="album-modal"
+      ariaLabel="Rename album"
+      showCloseButton
+      closeButtonClassName="album-modal-close"
+      closeButtonAriaLabel="Close album rename"
+      onClose={onClose}
+    >
+      <form className="album-modal-content" onSubmit={(event) => void onSubmit(event)}>
+        <div className="album-modal-header">
+          <h2>Rename album</h2>
+          <p>Choose a new name for this album in the Albums section.</p>
+        </div>
+
+        <div className="album-modal-field">
+          <label className="album-modal-label" htmlFor="rename-album-name">
+            Album name
+          </label>
+          <input
+            ref={inputRef}
+            id="rename-album-name"
+            className="form-text-input album-modal-input"
+            type="text"
+            value={albumName}
+            onChange={(event) => onChangeName(event.currentTarget.value)}
+            placeholder="Enter the album name"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={isRenamingAlbum}
+          />
+          {renameAlbumError ? <span className="album-modal-error">{renameAlbumError}</span> : null}
+        </div>
+
+        <div className="album-modal-actions">
+          <button type="submit" className="pill-button accent-button album-modal-confirm" disabled={isRenamingAlbum}>
+            {isRenamingAlbum ? "Saving..." : "Save"}
           </button>
         </div>
       </form>
